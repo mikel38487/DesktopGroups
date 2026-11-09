@@ -1,13 +1,22 @@
 ﻿# DesktopGroups — группировка ярлыков рабочего стола с подписями на обоях.
+# Интерфейс на русском и английском: язык берётся из config.json, из параметра
+# -Lang или из локали Windows, и переключается в окне.
 # Запуск: DesktopGroups.cmd (или powershell.exe -STA -File DesktopGroups.ps1)
 
-param([string]$ConfigPath)
+param(
+    [string]$ConfigPath,
+    [string]$Lang
+)
+
+
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName Microsoft.VisualBasic
 
 . (Join-Path $PSScriptRoot 'lib\Engine.ps1')
+. (Join-Path $PSScriptRoot 'lib\Strings.ps1')
+
 
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
@@ -21,25 +30,37 @@ if ($ConfigPath) {
     else {
         # не даём писать JSON куда угодно: параметр принимаем только для .json
         $script:ConfigPath = Join-Path $script:AppDir 'config.json'
-        $script:ConfigNote = 'параметр -ConfigPath не указывает на .json — взят конфиг по умолчанию'
+        $script:ConfigNote = 'config-path-ignored'
     }
 }
 else {
     $script:ConfigPath = Join-Path $script:AppDir 'config.json'
 }
+
 $script:BackupDir = Join-Path $script:AppDir 'backups'
 $script:Version = '0.0.0'
 $verFile = Join-Path $script:AppDir 'VERSION'
 if (Test-Path -LiteralPath $verFile) { $script:Version = (Get-Content -LiteralPath $verFile -Raw).Trim() }
+
 $script:Groups = New-Object System.Collections.ArrayList
 $script:Items = @()
 $script:Screen = Get-ScreenInfo
 $script:Grid = Get-DefaultGrid
+$script:BackgroundImage = ''
+$script:SuppressLanguageEvent = $false
+
+# язык: параметр важнее локали, файл настроек важнее параметра
+if ($Lang -and (Test-LanguageCode $Lang)) { Set-Language $Lang }
 
 # ---------------------------------------------------------------- конфиг
 
 function Save-Config {
-    $data = @{ groups = @(); updated = (Get-Date -Format 'yyyy-MM-dd HH:mm') }
+    $data = @{
+        groups     = @()
+        language   = $script:UiLanguage
+        background = $script:BackgroundImage
+        updated    = (Get-Date -Format 'yyyy-MM-dd HH:mm')
+    }
     foreach ($g in $script:Groups) {
         $data.groups += @{ name = $g.name; color = $g.color; items = @($g.items) }
     }
@@ -80,6 +101,17 @@ function Import-Config {
         return $false
     }
 
+    # язык из файла перекрывает локаль, но не явный параметр -Lang
+    if (-not $Lang -and $data.language -and (Test-LanguageCode ([string]$data.language))) {
+        Set-Language ([string]$data.language)
+    }
+
+    if ($data.background) {
+        $bg = [string]$data.background
+        if (Test-Path -LiteralPath $bg -PathType Leaf) { $script:BackgroundImage = $bg }
+        else { $script:BackgroundImage = '' }
+    }
+
     $script:Groups.Clear()
     foreach ($g in @($data.groups)) {
         # значения из файла — недоверенный ввод: приводим типы и отбрасываем мусор
@@ -114,6 +146,8 @@ function Get-OrCreateGroup {
     return $ng
 }
 
+function Get-OtherGroupName { return (T 'group.other') }
+
 function Remove-ItemFromAllGroups {
     param([string]$ItemName)
     foreach ($g in $script:Groups) {
@@ -129,10 +163,10 @@ function Get-UnassignedItems {
     return @($script:Items | Where-Object { -not $assigned.ContainsKey($_.name) } | ForEach-Object { $_.name })
 }
 
-# ---------------------------------------------------------------- интерфейс
+# ---------------------------------------------------------------- окно
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = 'DesktopGroups ' + $script:Version + ' — группы ярлыков рабочего стола'
+$form.Text = 'DesktopGroups ' + $script:Version
 # на маленьких экранах окно не должно вылезать за рабочую область
 $work = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
 $winW = [Math]::Min(1140, $work.Width - 20)
@@ -147,31 +181,41 @@ $status = New-Object System.Windows.Forms.Label
 $status.AutoSize = $false
 $status.Location = New-Object System.Drawing.Point(12, 690)
 $status.Size = New-Object System.Drawing.Size(1100, 22)
-$status.Text = 'Готово'
 $form.Controls.Add($status)
 
 # --- верхняя панель
 $btnScan = New-Object System.Windows.Forms.Button
-$btnScan.Text = 'Сканировать стол'
 $btnScan.Location = New-Object System.Drawing.Point(12, 12)
 $btnScan.Size = New-Object System.Drawing.Size(150, 30)
 $form.Controls.Add($btnScan)
 
 $btnPropose = New-Object System.Windows.Forms.Button
-$btnPropose.Text = 'Предложить группы'
 $btnPropose.Location = New-Object System.Drawing.Point(170, 12)
 $btnPropose.Size = New-Object System.Drawing.Size(160, 30)
 $form.Controls.Add($btnPropose)
 
 $lblTop = New-Object System.Windows.Forms.Label
 $lblTop.Location = New-Object System.Drawing.Point(345, 19)
-$lblTop.Size = New-Object System.Drawing.Size(500, 20)
+$lblTop.Size = New-Object System.Drawing.Size(430, 20)
 $lblTop.Text = ''
 $form.Controls.Add($lblTop)
 
+$lblLang = New-Object System.Windows.Forms.Label
+$lblLang.Location = New-Object System.Drawing.Point(790, 19)
+$lblLang.Size = New-Object System.Drawing.Size(52, 20)
+$lblLang.TextAlign = 'MiddleRight'
+$form.Controls.Add($lblLang)
+
+$cmbLang = New-Object System.Windows.Forms.ComboBox
+$cmbLang.Location = New-Object System.Drawing.Point(848, 15)
+$cmbLang.Size = New-Object System.Drawing.Size(120, 24)
+$cmbLang.DropDownStyle = 'DropDownList'
+[void]$cmbLang.Items.Add('Русский')
+[void]$cmbLang.Items.Add('English')
+$form.Controls.Add($cmbLang)
+
 # --- группы
 $grpGroups = New-Object System.Windows.Forms.GroupBox
-$grpGroups.Text = 'Группы'
 $grpGroups.Location = New-Object System.Drawing.Point(12, 52)
 $grpGroups.Size = New-Object System.Drawing.Size(300, 625)
 $form.Controls.Add($grpGroups)
@@ -183,31 +227,26 @@ $lstGroups.IntegralHeight = $false
 $grpGroups.Controls.Add($lstGroups)
 
 $btnNew = New-Object System.Windows.Forms.Button
-$btnNew.Text = 'Новая'
 $btnNew.Location = New-Object System.Drawing.Point(10, 530)
 $btnNew.Size = New-Object System.Drawing.Size(85, 28)
 $grpGroups.Controls.Add($btnNew)
 
 $btnRename = New-Object System.Windows.Forms.Button
-$btnRename.Text = 'Переименовать'
 $btnRename.Location = New-Object System.Drawing.Point(100, 530)
 $btnRename.Size = New-Object System.Drawing.Size(115, 28)
 $grpGroups.Controls.Add($btnRename)
 
 $btnDelete = New-Object System.Windows.Forms.Button
-$btnDelete.Text = 'Удалить'
 $btnDelete.Location = New-Object System.Drawing.Point(220, 530)
 $btnDelete.Size = New-Object System.Drawing.Size(70, 28)
 $grpGroups.Controls.Add($btnDelete)
 
 $btnUp = New-Object System.Windows.Forms.Button
-$btnUp.Text = '↑ выше'
 $btnUp.Location = New-Object System.Drawing.Point(10, 564)
 $btnUp.Size = New-Object System.Drawing.Size(100, 28)
 $grpGroups.Controls.Add($btnUp)
 
 $btnDown = New-Object System.Windows.Forms.Button
-$btnDown.Text = '↓ ниже'
 $btnDown.Location = New-Object System.Drawing.Point(115, 564)
 $btnDown.Size = New-Object System.Drawing.Size(100, 28)
 $grpGroups.Controls.Add($btnDown)
@@ -220,7 +259,6 @@ $grpGroups.Controls.Add($lblUnassigned)
 
 # --- значки выбранной группы
 $grpItems = New-Object System.Windows.Forms.GroupBox
-$grpItems.Text = 'Значки группы'
 $grpItems.Location = New-Object System.Drawing.Point(322, 52)
 $grpItems.Size = New-Object System.Drawing.Size(360, 625)
 $form.Controls.Add($grpItems)
@@ -233,13 +271,11 @@ $lstItems.SelectionMode = 'MultiExtended'
 $grpItems.Controls.Add($lstItems)
 
 $btnAdd = New-Object System.Windows.Forms.Button
-$btnAdd.Text = 'Добавить значки…'
 $btnAdd.Location = New-Object System.Drawing.Point(10, 530)
 $btnAdd.Size = New-Object System.Drawing.Size(165, 28)
 $grpItems.Controls.Add($btnAdd)
 
 $btnRemove = New-Object System.Windows.Forms.Button
-$btnRemove.Text = 'Убрать из группы'
 $btnRemove.Location = New-Object System.Drawing.Point(180, 530)
 $btnRemove.Size = New-Object System.Drawing.Size(170, 28)
 $grpItems.Controls.Add($btnRemove)
@@ -247,12 +283,10 @@ $grpItems.Controls.Add($btnRemove)
 $lblItemsHint = New-Object System.Windows.Forms.Label
 $lblItemsHint.Location = New-Object System.Drawing.Point(10, 564)
 $lblItemsHint.Size = New-Object System.Drawing.Size(340, 40)
-$lblItemsHint.Text = 'Порядок значков внутри группы — порядок в списке. Стрелки групп задают порядок блоков.'
 $grpItems.Controls.Add($lblItemsHint)
 
 # --- предпросмотр
 $grpPreview = New-Object System.Windows.Forms.GroupBox
-$grpPreview.Text = 'Предпросмотр раскладки'
 $grpPreview.Location = New-Object System.Drawing.Point(692, 52)
 $grpPreview.Size = New-Object System.Drawing.Size(420, 300)
 $form.Controls.Add($grpPreview)
@@ -272,47 +306,126 @@ $grpPreview.Controls.Add($lblPreviewInfo)
 
 # --- действия
 $grpActions = New-Object System.Windows.Forms.GroupBox
-$grpActions.Text = 'Применить'
 $grpActions.Location = New-Object System.Drawing.Point(692, 362)
 $grpActions.Size = New-Object System.Drawing.Size(420, 315)
 $form.Controls.Add($grpActions)
 
 $btnApply = New-Object System.Windows.Forms.Button
-$btnApply.Text = 'Разложить значки и обновить обои'
-$btnApply.Location = New-Object System.Drawing.Point(12, 25)
-$btnApply.Size = New-Object System.Drawing.Size(396, 40)
+$btnApply.Location = New-Object System.Drawing.Point(12, 22)
+$btnApply.Size = New-Object System.Drawing.Size(396, 38)
 $btnApply.Font = New-Object System.Drawing.Font('Segoe UI', 9, [System.Drawing.FontStyle]::Bold)
 $grpActions.Controls.Add($btnApply)
 
 $btnSaveWall = New-Object System.Windows.Forms.Button
-$btnSaveWall.Text = 'Сохранить обои в файл…'
-$btnSaveWall.Location = New-Object System.Drawing.Point(12, 75)
-$btnSaveWall.Size = New-Object System.Drawing.Size(396, 30)
+$btnSaveWall.Location = New-Object System.Drawing.Point(12, 64)
+$btnSaveWall.Size = New-Object System.Drawing.Size(396, 28)
 $grpActions.Controls.Add($btnSaveWall)
 
 $btnRestore = New-Object System.Windows.Forms.Button
-$btnRestore.Text = 'Вернуть прошлую раскладку'
-$btnRestore.Location = New-Object System.Drawing.Point(12, 115)
-$btnRestore.Size = New-Object System.Drawing.Size(396, 28)
+$btnRestore.Location = New-Object System.Drawing.Point(12, 96)
+$btnRestore.Size = New-Object System.Drawing.Size(396, 26)
 $grpActions.Controls.Add($btnRestore)
 
+$btnBg = New-Object System.Windows.Forms.Button
+$btnBg.Location = New-Object System.Drawing.Point(12, 128)
+$btnBg.Size = New-Object System.Drawing.Size(252, 28)
+$grpActions.Controls.Add($btnBg)
+
+$btnBgClear = New-Object System.Windows.Forms.Button
+$btnBgClear.Location = New-Object System.Drawing.Point(272, 128)
+$btnBgClear.Size = New-Object System.Drawing.Size(136, 28)
+$grpActions.Controls.Add($btnBgClear)
+
+$lblBg = New-Object System.Windows.Forms.Label
+$lblBg.Location = New-Object System.Drawing.Point(12, 160)
+$lblBg.Size = New-Object System.Drawing.Size(396, 18)
+$lblBg.Text = ''
+$grpActions.Controls.Add($lblBg)
+
 $lblHelp = New-Object System.Windows.Forms.Label
-$lblHelp.Location = New-Object System.Drawing.Point(12, 150)
-$lblHelp.Size = New-Object System.Drawing.Size(396, 155)
-$lblHelp.Text = @"
-Как это работает
-
-1. «Сканировать стол» — читает ярлыки, папки и файлы с рабочего стола.
-2. «Предложить группы» — раскладывает значки по группам по именам.
-3. Свои группы: «Новая», «Переименовать», «Удалить», стрелки меняют порядок блоков.
-4. «Добавить значки…» — переносит ярлыки в выбранную группу.
-5. «Разложить значки и обновить обои» — расставляет значки
-   прямоугольниками и рисует рамки с подписями на обоях.
-
-Рамки совпадают с сеткой значков: обои и раскладка
-считаются из одного и того же плана.
-"@
+$lblHelp.Location = New-Object System.Drawing.Point(12, 182)
+$lblHelp.Size = New-Object System.Drawing.Size(396, 122)
+$lblHelp.Font = New-Object System.Drawing.Font('Segoe UI', 8)
 $grpActions.Controls.Add($lblHelp)
+
+# ---------------------------------------------------------------- язык
+
+# Все подписи окна ставятся здесь: при смене языка достаточно вызвать снова.
+function Update-Language {
+    param([switch]$SkipLists)
+
+    $form.Text = (T 'app.title' @($script:Version))
+
+    $btnScan.Text = T 'btn.scan'
+    $btnPropose.Text = T 'btn.propose'
+    $btnNew.Text = T 'btn.new'
+    $btnRename.Text = T 'btn.rename'
+    $btnDelete.Text = T 'btn.delete'
+    $btnUp.Text = T 'btn.up'
+    $btnDown.Text = T 'btn.down'
+    $btnAdd.Text = T 'btn.add'
+    $btnRemove.Text = T 'btn.remove'
+    $btnApply.Text = T 'btn.apply'
+    $btnSaveWall.Text = T 'btn.saveWall'
+    $btnRestore.Text = T 'btn.restore'
+    $btnBg.Text = T 'btn.bg'
+    $btnBgClear.Text = T 'btn.bgClear'
+
+    $grpGroups.Text = T 'grp.groups'
+    $grpItems.Text = T 'grp.items'
+    $grpPreview.Text = T 'grp.preview'
+    $grpActions.Text = T 'grp.apply'
+
+    $lblLang.Text = T 'lbl.lang'
+    $lblItemsHint.Text = T 'hint.order'
+    $lblHelp.Text = (T 'lbl.help').Trim()
+
+    Update-BackgroundLabel
+
+    if (-not $SkipLists) {
+        Update-GroupList
+        Update-ItemList
+        Update-Preview
+    }
+}
+
+function Update-BackgroundLabel {
+    if ($script:BackgroundImage) {
+        $lblBg.Text = (T 'lbl.bgSet' @([IO.Path]::GetFileName($script:BackgroundImage)))
+    }
+    else {
+        $lblBg.Text = T 'lbl.bgNone'
+    }
+}
+
+function Set-InterfaceLanguage {
+    param([string]$Code)
+
+    if (-not (Test-LanguageCode $Code)) { return }
+    if ($Code -eq $script:UiLanguage) { return }
+
+    $oldOther = (T 'group.other')
+    Set-Language $Code
+    $newOther = (T 'group.other')
+
+    # служебная группа «Прочее»/«Misc» переименовывается вместе с интерфейсом
+    foreach ($g in $script:Groups) {
+        if ($g.name -eq $oldOther) { $g.name = $newOther }
+    }
+
+    Update-Language
+    Save-Config
+    $status.Text = T 'status.langSet'
+}
+
+$cmbLang.Add_SelectedIndexChanged({
+        if ($script:SuppressLanguageEvent) { return }
+        $code = 'ru'
+        if ($cmbLang.SelectedIndex -eq 1) { $code = 'en' }
+        # событие может прийти повторно с тем же значением — не дёргаем интерфейс
+        if ($code -eq $script:UiLanguage) { return }
+        Set-InterfaceLanguage $code
+    })
 
 # ---------------------------------------------------------------- обновление
 
@@ -329,8 +442,8 @@ function Update-GroupList {
     elseif ($lstGroups.Items.Count -gt 0) { $lstGroups.SelectedIndex = 0 }
 
     $un = @(Get-UnassignedItems)
-    $lblUnassigned.Text = 'Вне групп: ' + $un.Count + ' значков'
-    $lblTop.Text = ('Значков на столе: {0}   Групп: {1}' -f $script:Items.Count, $script:Groups.Count)
+    $lblUnassigned.Text = (T 'lbl.unassigned' @($un.Count))
+    $lblTop.Text = (T 'lbl.top' @($script:Items.Count, $script:Groups.Count))
 }
 
 function Update-ItemList {
@@ -339,10 +452,10 @@ function Update-ItemList {
     $g = Get-SelectedGroup
     if ($g) {
         foreach ($i in @($g.items)) { [void]$lstItems.Items.Add($i) }
-        $grpItems.Text = 'Значки группы «' + $g.name + '»'
+        $grpItems.Text = (T 'grp.itemsOf' @($g.name))
     }
     else {
-        $grpItems.Text = 'Значки группы'
+        $grpItems.Text = T 'grp.items'
     }
     $lstItems.EndUpdate()
 }
@@ -357,14 +470,14 @@ function Update-Preview {
     $preview.Invalidate()
     $groups = @($script:Groups | Where-Object { @($_.items).Count -gt 0 })
     if ($groups.Count -eq 0) {
-        $lblPreviewInfo.Text = 'Групп с ярлыками нет'
+        $lblPreviewInfo.Text = T 'lbl.previewEmpty'
         return
     }
     $layout = New-Layout $groups $script:Screen $script:Grid
     $count = 0
     foreach ($b in $layout.blocks) { $count += @($b.items).Count }
-    $lblPreviewInfo.Text = ('Блоков: {0}   Значков: {1}' -f $layout.blocks.Count, $count)
-    if ($layout.overflow) { $lblPreviewInfo.Text += '   ВНИМАНИЕ: не влезает на экран' }
+    $lblPreviewInfo.Text = (T 'lbl.previewInfo' @($layout.blocks.Count, $count))
+    if ($layout.overflow) { $lblPreviewInfo.Text += (T 'lbl.overflowNote') }
 }
 
 $preview.Add_Paint({
@@ -377,6 +490,37 @@ $preview.Add_Paint({
             $scaleX = $s.Width / [double]$script:Screen.width
             $scaleY = $s.Height / [double]$script:Screen.height
             $scale = [Math]::Min($scaleX, $scaleY)
+
+            # фон показываем так же, как он ляжет на обои
+            if ($script:BackgroundImage) {
+                $loaded = $null
+                try {
+                    $loaded = Get-BackgroundImage -Path $script:BackgroundImage
+                    if ($loaded) {
+                        $dstW = [int]($script:Screen.width * $scale)
+                        $dstH = [int]($script:Screen.height * $scale)
+                        $k = [Math]::Max($dstW / [double]$loaded.Image.Width, $dstH / [double]$loaded.Image.Height)
+                        $dw = [int][Math]::Ceiling($loaded.Image.Width * $k)
+                        $dh = [int][Math]::Ceiling($loaded.Image.Height * $k)
+                        $dx = [int](($dstW - $dw) / 2)
+                        $dy = [int](($dstH - $dh) / 2)
+                        $gfx.DrawImage($loaded.Image, (New-Object System.Drawing.Rectangle($dx, $dy, $dw, $dh)))
+                        $scrim = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(130, 0, 0, 0))
+                        $gfx.FillRectangle($scrim, 0, 0, $dstW, $dstH)
+                        $scrim.Dispose()
+                    }
+                }
+                catch {
+                    Write-Verbose 'фон в предпросмотре не отрисован'
+                }
+                finally {
+                    if ($loaded) {
+                        $loaded.Image.Dispose()
+                        $loaded.Stream.Dispose()
+                    }
+                }
+            }
+
             $groups = @($script:Groups | Where-Object { @($_.items).Count -gt 0 })
             if ($groups.Count -eq 0) { return }
             $layout = New-Layout $groups $script:Screen $script:Grid
@@ -407,7 +551,7 @@ $preview.Add_Paint({
 $lstGroups.Add_SelectedIndexChanged({ Update-ItemList })
 
 $btnScan.Add_Click({
-        $status.Text = 'Сканирую рабочий стол…'
+        $status.Text = T 'status.scanning'
         $script:Items = Get-DesktopItems -AlignWithView
 
         # группы не сбрасываем: только убираем исчезнувшие значки
@@ -421,7 +565,7 @@ $btnScan.Add_Click({
 
         $unassigned = @(Get-UnassignedItems)
         if ($unassigned.Count -gt 0) {
-            $target = Get-OrCreateGroup 'Прочее' '#8C8C8C'
+            $target = Get-OrCreateGroup (Get-OtherGroupName) '#8C8C8C'
             foreach ($u in $unassigned) {
                 if (@($target.items) -notcontains $u) { $target.items = @($target.items) + $u }
             }
@@ -431,31 +575,37 @@ $btnScan.Add_Click({
         Update-GroupList
         Update-ItemList
         Update-Preview
-        $status.Text = 'Найдено значков: ' + $script:Items.Count + '. Группы сохранены, новые — в «Прочее».'
+        $status.Text = (T 'status.scanned' @($script:Items.Count))
     })
 
 $btnPropose.Add_Click({
-        if ($script:Items.Count -eq 0) { $script:Items = Get-DesktopItems }
-        $ans = [System.Windows.Forms.MessageBox]::Show('Заменить текущие группы предложенными?', 'Предложить группы', 'YesNo', 'Question')
+        if ($script:Items.Count -eq 0) { $script:Items = Get-DesktopItems -AlignWithView }
+        $ans = [System.Windows.Forms.MessageBox]::Show(
+            (T 'msg.replaceText'),
+            (T 'msg.replaceTitle'),
+            'YesNo', 'Question')
         if ($ans -ne 'Yes') { return }
         $script:Groups.Clear()
-        $proposed = New-ProposedGroups $script:Items
+        $proposed = New-ProposedGroups $script:Items $script:UiLanguage
         foreach ($g in $proposed) { [void]$script:Groups.Add($g) }
         Save-Config
         Update-GroupList
         Update-ItemList
         Update-Preview
-        $status.Text = 'Предложено групп: ' + $script:Groups.Count
+        $status.Text = (T 'status.proposed' @($script:Groups.Count))
     })
 
 $btnNew.Add_Click({
-        $name = [Microsoft.VisualBasic.Interaction]::InputBox('Название новой группы', 'Новая группа', 'Моя группа')
+        $name = [Microsoft.VisualBasic.Interaction]::InputBox(
+            (T 'dlg.newGroupPrompt'),
+            (T 'dlg.newGroupTitle'),
+            (T 'dlg.newGroupDefault'))
         if (-not $name) { return }
         $name = $name.Trim()
         if (-not $name) { return }
         foreach ($g in $script:Groups) {
             if ($g.name -eq $name) {
-                [System.Windows.Forms.MessageBox]::Show('Группа с таким названием уже есть.', 'Новая группа', 'OK', 'Warning')
+                [System.Windows.Forms.MessageBox]::Show((T 'msg.exists'), (T 'dlg.newGroupTitle'), 'OK', 'Warning')
                 return
             }
         }
@@ -465,19 +615,22 @@ $btnNew.Add_Click({
         $lstGroups.SelectedIndex = $lstGroups.Items.Count - 1
         Update-ItemList
         Update-Preview
-        $status.Text = 'Создана группа «' + $name + '»'
+        $status.Text = (T 'status.created' @($name))
     })
 
 $btnRename.Add_Click({
         $g = Get-SelectedGroup
         if (-not $g) { return }
-        $name = [Microsoft.VisualBasic.Interaction]::InputBox('Новое название группы', 'Переименовать', $g.name)
+        $name = [Microsoft.VisualBasic.Interaction]::InputBox(
+            (T 'dlg.renamePrompt'),
+            (T 'dlg.renameTitle'),
+            $g.name)
         if (-not $name) { return }
         $name = $name.Trim()
         if (-not $name) { return }
         foreach ($o in $script:Groups) {
             if ($o -ne $g -and $o.name -eq $name) {
-                [System.Windows.Forms.MessageBox]::Show('Группа с таким названием уже есть.', 'Переименовать', 'OK', 'Warning')
+                [System.Windows.Forms.MessageBox]::Show((T 'msg.exists'), (T 'dlg.renameTitle'), 'OK', 'Warning')
                 return
             }
         }
@@ -486,15 +639,18 @@ $btnRename.Add_Click({
         Update-GroupList
         Update-ItemList
         Update-Preview
-        $status.Text = 'Группа переименована в «' + $name + '»'
+        $status.Text = (T 'status.renamed' @($name))
     })
 
 $btnDelete.Add_Click({
         $g = Get-SelectedGroup
         if (-not $g) { return }
-        $ans = [System.Windows.Forms.MessageBox]::Show(('Удалить группу «{0}»? Значки вернутся в «Прочее».' -f $g.name), 'Удалить', 'YesNo', 'Question')
+        $ans = [System.Windows.Forms.MessageBox]::Show(
+            (T 'dlg.deleteText' @($g.name)),
+            (T 'dlg.deleteTitle'),
+            'YesNo', 'Question')
         if ($ans -ne 'Yes') { return }
-        $target = Get-OrCreateGroup 'Прочее' '#8C8C8C'
+        $target = Get-OrCreateGroup (Get-OtherGroupName) '#8C8C8C'
         foreach ($i in @($g.items)) {
             if (@($target.items) -notcontains $i) { $target.items = @($target.items) + $i }
         }
@@ -503,7 +659,7 @@ $btnDelete.Add_Click({
         Update-GroupList
         Update-ItemList
         Update-Preview
-        $status.Text = 'Группа удалена'
+        $status.Text = T 'status.deleted'
     })
 
 $btnUp.Add_Click({
@@ -535,17 +691,18 @@ $btnAdd.Add_Click({
         if (-not $g) { return }
         $candidates = @(Get-UnassignedItems)
         if ($candidates.Count -eq 0) {
-            [System.Windows.Forms.MessageBox]::Show('Свободных значков нет — все уже в группах.', 'Добавить значки', 'OK', 'Information')
+            [System.Windows.Forms.MessageBox]::Show((T 'dlg.noFree'), (T 'btn.add').TrimEnd([char]0x2026), 'OK', 'Information')
             return
         }
 
         $dlg = New-Object System.Windows.Forms.Form
-        $dlg.Text = 'Добавить значки в «' + $g.name + '»'
+        $dlg.Text = (T 'dlg.addTitle' @($g.name))
         $dlg.Size = New-Object System.Drawing.Size(380, 500)
         $dlg.StartPosition = 'CenterParent'
         $dlg.FormBorderStyle = 'FixedDialog'
         $dlg.MaximizeBox = $false
         $dlg.MinimizeBox = $false
+        $dlg.Font = $form.Font
 
         $clb = New-Object System.Windows.Forms.CheckedListBox
         $clb.Location = New-Object System.Drawing.Point(12, 12)
@@ -555,14 +712,14 @@ $btnAdd.Add_Click({
         $dlg.Controls.Add($clb)
 
         $ok = New-Object System.Windows.Forms.Button
-        $ok.Text = 'Добавить'
+        $ok.Text = T 'dlg.addButton'
         $ok.DialogResult = 'OK'
         $ok.Location = New-Object System.Drawing.Point(180, 415)
         $ok.Size = New-Object System.Drawing.Size(80, 28)
         $dlg.Controls.Add($ok)
 
         $cancel = New-Object System.Windows.Forms.Button
-        $cancel.Text = 'Отмена'
+        $cancel.Text = T 'dlg.cancel'
         $cancel.DialogResult = 'Cancel'
         $cancel.Location = New-Object System.Drawing.Point(270, 415)
         $cancel.Size = New-Object System.Drawing.Size(80, 28)
@@ -581,7 +738,7 @@ $btnAdd.Add_Click({
             Update-GroupList
             Update-ItemList
             Update-Preview
-            $status.Text = 'Добавлено значков: ' + $chosen.Count
+            $status.Text = (T 'status.added' @($chosen.Count))
         }
         $dlg.Dispose()
     })
@@ -598,54 +755,90 @@ $btnRemove.Add_Click({
         Update-GroupList
         Update-ItemList
         Update-Preview
-        $status.Text = 'Убрано значков: ' + $sel.Count + ' (вернулись в свободные)'
+        $status.Text = (T 'status.removed' @($sel.Count))
+    })
+
+$btnBg.Add_Click({
+        $dlg = New-Object System.Windows.Forms.OpenFileDialog
+        $dlg.Title = T 'dlg.bgTitle'
+        $dlg.Filter = T 'dlg.bgFilter'
+        if ($dlg.ShowDialog() -ne 'OK') { return }
+
+        # проверяем файл до сохранения: битый не должен попасть в настройки
+        $loaded = $null
+        try {
+            $loaded = Get-BackgroundImage -Path $dlg.FileName
+            if (-not $loaded) { throw 'не удалось прочитать изображение' }
+        }
+        catch {
+            [System.Windows.Forms.MessageBox]::Show(
+                $_.Exception.Message, (T 'msg.errorTitle'), 'OK', 'Error')
+            return
+        }
+        finally {
+            if ($loaded) {
+                $loaded.Image.Dispose()
+                $loaded.Stream.Dispose()
+            }
+        }
+
+        $script:BackgroundImage = $dlg.FileName
+        Save-Config
+        Update-BackgroundLabel
+        Update-Preview
+        $status.Text = (T 'status.bgChosen' @([IO.Path]::GetFileName($dlg.FileName)))
+    })
+
+$btnBgClear.Add_Click({
+        $script:BackgroundImage = ''
+        Save-Config
+        Update-BackgroundLabel
+        Update-Preview
+        $status.Text = T 'status.bgCleared'
     })
 
 $btnApply.Add_Click({
         $groups = @($script:Groups | Where-Object { @($_.items).Count -gt 0 })
         if ($groups.Count -eq 0) {
-            [System.Windows.Forms.MessageBox]::Show('Нет групп со значками.', 'Применить', 'OK', 'Warning')
+            [System.Windows.Forms.MessageBox]::Show((T 'msg.noGroups'), (T 'msg.applyTitle'), 'OK', 'Warning')
             return
         }
         if (Test-AutoArrange) {
-            [System.Windows.Forms.MessageBox]::Show(
-                'На рабочем столе включено «Упорядочить автоматически» — Windows переставит значки, и рамки разъедутся.' + "`r`n`r`n" +
-                'Выключите его: правый клик по столу → Упорядочить значки → снять «Упорядочить автоматически». Потом повторите.',
-                'Применить', 'OK', 'Warning')
+            [System.Windows.Forms.MessageBox]::Show((T 'msg.autoArrange'), (T 'msg.applyTitle'), 'OK', 'Warning')
             return
         }
-        $status.Text = 'Применяю раскладку…'
+        $status.Text = T 'status.applying'
         $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
         try {
             $layout = New-Layout $groups $script:Screen $script:Grid
             if ($layout.overflow) {
-                $ans = [System.Windows.Forms.MessageBox]::Show('Блоки не влезают на экран по высоте. Продолжить?', 'Применить', 'YesNo', 'Warning')
+                $ans = [System.Windows.Forms.MessageBox]::Show((T 'msg.overflow'), (T 'msg.applyTitle'), 'YesNo', 'Warning')
                 if ($ans -ne 'Yes') { return }
             }
             $res = Invoke-DesktopLayout $layout $script:BackupDir
             $png = Join-Path $script:AppDir 'wallpaper.png'
             # обои рисуем ровно в размере экрана: иначе на другом разрешении
             # Windows растянет картинку и рамки разъедутся со значками
-            $null = Save-Wallpaper $layout $png $script:Screen.width $script:Screen.height
+            $null = Save-Wallpaper $layout $png $script:Screen.width $script:Screen.height 12 $script:BackgroundImage
             $ok = Set-DesktopWallpaper $png
 
-            $msg = 'Расставлено: {0}, проходов: {1}' -f $res.placed, $res.passes
+            $msg = (T 'status.applied' @($res.placed, $res.passes))
             if ($res.mismatches.Count -gt 0) {
-                $msg += '; не встало: ' + $res.mismatches.Count
-                $details = ($res.mismatches | ForEach-Object { '{0}: ждали {1}, получили {2}' -f $_.name, $_.expected, $_.actual }) -join "`r`n"
-                $msg += "`r`n" + $details
+                $msg += (T 'status.applyMismatch' @($res.mismatches.Count))
+                $details = ($res.mismatches | ForEach-Object { '{0}: {1} -> {2}' -f $_.name, $_.expected, $_.actual }) -join '; '
+                $msg += ' (' + $details + ')'
             }
             if ($res.unknown.Count -gt 0) {
-                $msg += '; вне плана: ' + ($res.unknown -join ', ')
+                $msg += (T 'status.applyUnknown' @($res.unknown -join ', '))
             }
-            if (-not $ok) { $msg += '; обои применились не сразу' }
-            $status.Text = $msg -replace "`r`n", ' | '
+            if (-not $ok) { $msg += (T 'status.applyNoWall') }
+            $status.Text = $msg
             Save-Config
             Update-Preview
         }
         catch {
-            $status.Text = 'Ошибка: ' + $_.Exception.Message
-            [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, 'Ошибка', 'OK', 'Error')
+            $status.Text = (T 'status.error' @($_.Exception.Message))
+            [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, (T 'msg.errorTitle'), 'OK', 'Error')
         }
         finally {
             $form.Cursor = [System.Windows.Forms.Cursors]::Default
@@ -660,8 +853,8 @@ $btnSaveWall.Add_Click({
         $dlg.FileName = 'desktop-groups.png'
         if ($dlg.ShowDialog() -eq 'OK') {
             $layout = New-Layout $groups $script:Screen $script:Grid
-            $null = Save-Wallpaper $layout $dlg.FileName $script:Screen.width $script:Screen.height
-            $status.Text = 'Обои сохранены: ' + $dlg.FileName
+            $null = Save-Wallpaper $layout $dlg.FileName $script:Screen.width $script:Screen.height 12 $script:BackgroundImage
+            $status.Text = (T 'status.saved' @($dlg.FileName))
         }
     })
 
@@ -669,7 +862,7 @@ $btnRestore.Add_Click({
         $files = @(Get-ChildItem -LiteralPath $script:BackupDir -Filter 'before-apply-*.json' -ErrorAction SilentlyContinue |
                 Sort-Object LastWriteTime -Descending)
         if ($files.Count -eq 0) {
-            [System.Windows.Forms.MessageBox]::Show('Бэкапов ещё нет: они создаются при каждом применении раскладки.', 'Восстановить', 'OK', 'Information')
+            [System.Windows.Forms.MessageBox]::Show((T 'msg.noBackups'), (T 'msg.restoreTitle'), 'OK', 'Information')
             return
         }
         $file = $files[0]
@@ -684,17 +877,17 @@ $btnRestore.Add_Click({
             }
         }
         catch {
-            [System.Windows.Forms.MessageBox]::Show('Не удалось прочитать бэкап: ' + $_.Exception.Message, 'Восстановить', 'OK', 'Error')
+            [System.Windows.Forms.MessageBox]::Show((T 'msg.backupRead' @($_.Exception.Message)), (T 'msg.restoreTitle'), 'OK', 'Error')
             return
         }
         $layout = [pscustomobject]@{ plan = $plan; grid = $script:Grid; blocks = @(); overflow = $false }
         $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
         try {
             $res = Invoke-DesktopLayout $layout $script:BackupDir
-            $status.Text = 'Возвращены позиции из {0}: значков {1}, расхождений {2}' -f $file.Name, $res.placed, $res.mismatches.Count
+            $status.Text = (T 'status.restored' @($file.Name, $res.placed, $res.mismatches.Count))
         }
         catch {
-            $status.Text = 'Ошибка восстановления: ' + $_.Exception.Message
+            $status.Text = (T 'status.restoreError' @($_.Exception.Message))
         }
         finally {
             $form.Cursor = [System.Windows.Forms.Cursors]::Default
@@ -711,33 +904,42 @@ $form.Add_Shown({
             $script:Grid = Get-ViewGridStep $view
         }
         catch {
-            $script:GridNote = 'сетка по умолчанию: ' + $_.Exception.Message
+            $script:GridNote = $_.Exception.Message
         }
         finally {
             if ($view) { Close-DesktopView $view }
         }
 
         if (-not (Import-Config)) {
-            $proposed = New-ProposedGroups $script:Items
+            $proposed = New-ProposedGroups $script:Items $script:UiLanguage
             foreach ($g in $proposed) { [void]$script:Groups.Add($g) }
             if ($script:ConfigBroken) {
-                # не перезаписываем молча: старый файл уже отложен, новый запишет пользователь
                 [System.Windows.Forms.MessageBox]::Show(
-                    'Файл настроек повреждён и сохранён как:' + "`r`n" + $script:ConfigBroken + "`r`n`r`n" +
-                    'Группы предложены заново. Проверьте их и нажмите «Применить» — тогда новый конфиг будет записан.',
-                    'Настройки', 'OK', 'Warning')
+                    (T 'msg.badConfig' @($script:ConfigBroken)),
+                    (T 'msg.settingsTitle'), 'OK', 'Warning')
             }
             else {
                 Save-Config
             }
         }
-        Update-GroupList
-        Update-ItemList
-        Update-Preview
-        $status.Text = 'Значков: {0}. Сетка {1}×{2}. Версия {3}. Конфиг: {4}' -f $script:Items.Count, $script:Grid.stepX, $script:Grid.stepY, $script:Version, $script:ConfigPath
-        if ($script:GridNote) { $status.Text = $script:GridNote + ' | ' + $status.Text }
+
+        # Переключатель языка выставляем так, чтобы обработчик не сработал.
+        # WinForms доставляет SelectedIndexChanged отложенно, уже после снятия
+        # флага, поэтому прокручиваем очередь сообщений ДО снятия флага —
+        # иначе интерфейс откатывался на системный язык.
+        $script:SuppressLanguageEvent = $true
+        $cmbLang.SelectedIndex = 0
+        if ($script:UiLanguage -eq 'en') { $cmbLang.SelectedIndex = 1 }
+        [System.Windows.Forms.Application]::DoEvents()
+        $script:SuppressLanguageEvent = $false
+        Update-Language
+
+        $status.Text = (T 'status.overview' @($script:Items.Count, $script:Grid.stepX, $script:Grid.stepY, $script:Version, $script:ConfigPath))
+        if ($script:GridNote) {
+            $status.Text = (T 'status.gridFallback' @($script:GridNote)) + ' | ' + $status.Text
+        }
         if ($script:UnresolvedItems -and @($script:UnresolvedItems).Count -gt 0) {
-            $status.Text += ' | не найдено на столе: ' + (@($script:UnresolvedItems) -join ', ')
+            $status.Text += ' | ' + (T 'status.unresolved' @((@($script:UnresolvedItems) -join ', ')))
         }
     })
 
@@ -755,6 +957,6 @@ catch {
     try { [IO.File]::WriteAllText($log, $_.Exception.ToString(), [Text.UTF8Encoding]::new($true)) }
     catch { Write-Verbose 'лог старта записать не удалось' }
     [System.Windows.Forms.MessageBox]::Show(
-        'Программа не смогла запуститься: ' + $_.Exception.Message + "`r`n`r`nПодробности: " + $log,
+        (T 'msg.startupFail' @($_.Exception.Message, $log)),
         'DesktopGroups', 'OK', 'Error')
 }

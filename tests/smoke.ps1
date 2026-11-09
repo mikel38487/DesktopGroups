@@ -46,7 +46,7 @@ $items = @(
     (New-FakeItem 'странная папка' '' 'folder')
 )
 
-$groups = New-ProposedGroups $items
+$groups = New-ProposedGroups $items 'ru'
 Check 'группы предложены' ($groups.Count -gt 0) "получено $($groups.Count)"
 
 $byName = @{}
@@ -69,7 +69,7 @@ $tricky = @(
     (New-FakeItem 'Immediate' '.lnk' 'shortcut')
     (New-FakeItem 'UltraVNC Launcher' '.lnk' 'shortcut')
 )
-$trickyGroups = New-ProposedGroups $tricky
+$trickyGroups = New-ProposedGroups $tricky 'ru'
 $tmap = @{}
 foreach ($g in $trickyGroups) { $tmap[$g.name] = @($g.items) }
 
@@ -143,6 +143,62 @@ try {
 }
 finally {
     if (Test-Path -LiteralPath $png) { Remove-Item -LiteralPath $png -Force }
+}
+
+# --- фоновый рисунок: картинка ложится под рамки и затемняется ---
+$bgFile = Join-Path ([IO.Path]::GetTempPath()) ('dg-bg-' + [guid]::NewGuid().ToString('N') + '.png')
+$bgOut = Join-Path ([IO.Path]::GetTempPath()) ('dg-bgout-' + [guid]::NewGuid().ToString('N') + '.png')
+try {
+    Add-Type -AssemblyName System.Drawing
+    # ровный ярко-красный фон: легко отличить от градиента и от чёрной вуали
+    $bmpBg = New-Object System.Drawing.Bitmap(200, 100)
+    $gBg = [System.Drawing.Graphics]::FromImage($bmpBg)
+    $gBg.Clear([System.Drawing.Color]::FromArgb(255, 220, 30, 30))
+    $gBg.Dispose()
+    # растягиваем на холст вручную, чтобы не зависеть от DPI
+    $big = New-Object System.Drawing.Bitmap(1920, 1080)
+    $gBig = [System.Drawing.Graphics]::FromImage($big)
+    $gBig.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+    $gBig.DrawImage($bmpBg, (New-Object System.Drawing.Rectangle(0, 0, 1920, 1080)))
+    $gBig.Dispose()
+    $big.Save($bgFile, [System.Drawing.Imaging.ImageFormat]::Png)
+    $big.Dispose()
+    $bmpBg.Dispose()
+
+    $null = Save-Wallpaper $layout $bgOut 1920 1080 12 $bgFile
+    Check 'обои с фоном созданы' ((Test-Path $bgOut) -and ((Get-Item $bgOut).Length -gt 5000))
+
+    $imgBg = [System.Drawing.Image]::FromFile($bgOut)
+    $bmpCheck = New-Object System.Drawing.Bitmap($imgBg)
+    # точка в пустой области: фон есть, но затемнён
+    $px = $bmpCheck.GetPixel(1800, 1000)
+    Check 'фон виден (красный преобладает)' ($px.R -gt $px.G -and $px.R -gt $px.B) "R=$($px.R) G=$($px.G) B=$($px.B)"
+    Check 'фон затемнён для читаемости подписей' ($px.R -lt 220) "R=$($px.R)"
+    # точка внутри рамки первого блока: там должна быть своя заливка
+    $b0 = $layout.blocks[0]
+    $px2 = $bmpCheck.GetPixel([int]($b0.x + 5), [int]($b0.y + 5))
+    Check 'рамка блока нарисована поверх фона' ($px2.R -ne $px.R) "внутри R=$($px2.R), снаружи R=$($px.R)"
+    $bmpCheck.Dispose()
+    $imgBg.Dispose()
+}
+finally {
+    foreach ($f in @($bgFile, $bgOut)) {
+        if ($f -and (Test-Path -LiteralPath $f)) { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue }
+    }
+}
+
+# --- битый файл фона не должен ломать генерацию ---
+$badBg = Join-Path ([IO.Path]::GetTempPath()) ('dg-badbg-' + [guid]::NewGuid().ToString('N') + '.png')
+$badOut = Join-Path ([IO.Path]::GetTempPath()) ('dg-badout-' + [guid]::NewGuid().ToString('N') + '.png')
+try {
+    [IO.File]::WriteAllText($badBg, 'это не картинка', [Text.UTF8Encoding]::new($true))
+    $null = Save-Wallpaper $layout $badOut 1920 1080 12 $badBg
+    Check 'битый фон не ломает обои (откат на градиент)' ((Test-Path $badOut) -and ((Get-Item $badOut).Length -gt 5000))
+}
+finally {
+    foreach ($f in @($badBg, $badOut)) {
+        if ($f -and (Test-Path -LiteralPath $f)) { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue }
+    }
 }
 
 # --- сопоставление имён ---

@@ -1,80 +1,89 @@
-# Политика безопасности
+# Security policy
 
-## Поддерживаемые версии
+Русская версия: [SECURITY.ru.md](SECURITY.ru.md)
 
-| Версия | Поддержка |
+## Supported versions
+
+| Version | Supported |
 |---|---|
-| 1.0.x | да |
-| < 1.0 | нет |
+| 1.1.x | yes |
+| 1.0.x | security fixes only |
+| < 1.0 | no |
 
-## Что программа делает в системе
+## What the program does to your system
 
-Чтобы оценивать риски, полезно знать полный список действий:
+Risk assessment needs the full list:
 
-| Что | Где | Зачем |
+| Action | Where | Why |
 |---|---|---|
-| Чтение имён и позиций значков | процесс `explorer.exe`, окно `SysListView32` | узнать, что лежит на столе и где стоит |
-| Запись позиций значков | те же окна, сообщение `LVM_SETITEMPOSITION32` | расставить значки по блокам |
-| Запись в реестр | `HKCU\Control Panel\Desktop` (`Wallpaper`, `WallpaperStyle`, `TileWallpaper`) | поставить сгенерированные обои |
-| Запись в реестр | `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\DesktopGroups` | запись в списке приложений (только при установке) |
-| Файлы | каталог программы: `config.json`, `wallpaper.png`, `backups\` | настройки, обои, бэкап позиций |
-| Файлы | `%LOCALAPPDATA%\Programs\DesktopGroups` | каталог установки |
-| Ярлыки | меню «Пуск», рабочий стол (по флагу) | запуск и удаление |
+| Read icon names and positions | `explorer.exe` process, `SysListView32` window | learn what is on the desktop and where |
+| Write icon positions | same window, `LVM_SETITEMPOSITION32` | place icons into blocks |
+| Read a background image | the file you pick in the dialog | use it as the wallpaper base |
+| Write registry | `HKCU\Control Panel\Desktop` (`Wallpaper`, `WallpaperStyle`, `TileWallpaper`) | apply the generated wallpaper |
+| Write registry | `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\DesktopGroups` | entry in *Apps & features* (install only) |
+| Files | program folder: `config.json`, `wallpaper.png`, `backups\` | settings, wallpaper, position backups |
+| Files | `%LOCALAPPDATA%\Programs\DesktopGroups` | install location |
+| Shortcuts | Start Menu, desktop (opt-in) | launch and removal |
 
-Чего программа **не** делает:
+What it does **not** do:
 
-- не ходит в сеть — ни проверок обновлений, ни телеметрии;
-- не требует и не запрашивает права администратора;
-- не устанавливает службы, драйверы, задачи планировщика и автозапуск;
-- не читает файлы за пределами рабочего стола и своего каталога;
-- не хранит и не запрашивает пароли, токены и ключи;
-- не запускает внешние программы, кроме собственного окна.
+- no network access — no update checks, no telemetry;
+- no administrator rights, never asks for elevation;
+- no services, drivers, scheduled tasks or autostart entries;
+- does not read files outside the desktop and its own folder
+  (plus the one image you explicitly pick);
+- stores and requests no passwords, tokens or keys;
+- runs no external programs.
 
-## Модель угроз
+## Threat model
 
-| Актив | Угроза | Как закрыто |
+| Asset | Threat | Mitigation |
 |---|---|---|
-| Позиции значков | программа испортит раскладку | бэкап перед применением, проверка после, повторные проходы |
-| Реестр | запись в чужие ключи | только два ключа `HKCU`, перечислены выше |
-| Память `explorer.exe` | повреждение чужого процесса | выделяется один буфер 4 КБ через `VirtualAllocEx`, освобождается в `finally`; пишутся только структуры `LVITEM`/`POINT` |
-| `config.json` | подмена файла, мусор в именах групп | значения используются как подписи и имена, а не как код или пути; имена сопоставляются с реальными значками, лишние отбрасываются |
-| Обои | подмена файла обоев | картинка генерируется локально из плана раскладки |
+| Icon positions | the program mangles the layout | backup before apply, verification after, repeated passes |
+| Registry | writing to foreign keys | only two `HKCU` keys, listed above |
+| `explorer.exe` memory | corrupting another process | a single 4 KB buffer via `VirtualAllocEx`, freed in `finally`; only `LVITEM`/`POINT` are written; the program refuses to run under 32-bit PowerShell, where the structure size would not match |
+| `config.json` | tampering, junk in group names | values are used as labels and item names, never as code or paths; names are matched against real desktop icons, unknown ones dropped; colours and lengths validated |
+| Background image | malicious or malformed file | the file is parsed by `System.Drawing`, capped at 100 MB, read into memory and released; a broken file is rejected and never stored |
+| Wallpaper | swapped file | the picture is generated locally from the layout plan |
 
-## Как проверить код самому
+## Verifying the code yourself
 
-Всё, что делает программа, видно в двух файлах: `DesktopGroups.ps1` (окно)
-и `lib\Engine.ps1` (логика). Внешних зависимостей нет, весь код в репозитории.
+Everything the program does is visible in three files: `DesktopGroups.ps1` (window),
+`lib\Engine.ps1` (logic) and `lib\Strings.ps1` (interface text). There are no
+external dependencies; all code is in the repository.
 
 ```powershell
-# статический анализ
+# static analysis
 Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
 Invoke-ScriptAnalyzer -Path . -Recurse -Settings .\PSScriptAnalyzerSettings.psd1
 
-# smoke-тесты без рабочего стола
+# checks that never touch the desktop
+powershell.exe -NoProfile -File .\tests\check-encoding.ps1
 powershell.exe -NoProfile -File .\tests\smoke.ps1
+powershell.exe -NoProfile -File .\tests\i18n.ps1
 
-# поиск секретов в истории
+# secret scan over history
 git log -p | Select-String -Pattern 'ghp_|api[_-]?key|password\s*=' -CaseSensitive:$false
 ```
 
-Подробнее об инструментах — в [docs/security-tooling.md](docs/security-tooling.md).
+More on tooling: [docs/security-tooling.md](security-tooling.md).
 
-## Как сообщить об уязвимости
+## Reporting a vulnerability
 
-- Не открывайте публичный issue. Используйте приватный канал:
-  вкладка **Security** → **Report a vulnerability** (GitHub Security Advisories).
-- Если это невозможно — напишите на адрес из профиля GitHub, без подробностей
-  эксплойта в открытом виде.
-- Что полезно приложить: версия (`VERSION`), версия Windows, шаги
-  воспроизведения, ожидаемое и фактическое поведение.
+- Do not open a public issue. Use the **Security** tab →
+  **Report a vulnerability** (GitHub Security Advisories).
+- If that is impossible, contact the address in the GitHub profile without
+  exploit details in the open.
+- Please include: version (`VERSION`), Windows version, reproduction steps,
+  expected and actual behaviour.
 
-Сроки: подтверждение получения — до 3 дней, оценка — до 7 дней, исправление —
-по договорённости в зависимости от серьёзности.
+Timeline: acknowledgement within 3 days, assessment within 7 days, fix by
+agreement depending on severity.
 
-## Область действия
+## Scope
 
-В зоне внимания: код в этом репозитории, установщик, генерация обоев,
-работа с реестром и с окном рабочего стола.
+In scope: code in this repository, the installer, wallpaper generation,
+registry work and the desktop window handling.
 
-Вне зоны: уязвимости Windows и Explorer, сторонние темы оформления,
-поведение самого рабочего стола при ручном перетаскивании значков.
+Out of scope: vulnerabilities in Windows and Explorer, third-party themes,
+desktop behaviour when icons are dragged by hand.

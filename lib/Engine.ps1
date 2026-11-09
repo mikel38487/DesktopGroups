@@ -26,15 +26,48 @@ $script:Palette = @(
     '#9A7FE0', '#E07A5F', '#B7B26A', '#8C8C8C', '#5FB7B0', '#C08FC0'
 )
 
+# Названия групп на двух языках: id общий, подпись зависит от языка интерфейса
+$script:GroupNames = @{
+    installers = @{ ru = 'Установщики'; en = 'Installers' }
+    network    = @{ ru = 'Сеть и VPN'; en = 'Network & VPN' }
+    games      = @{ ru = 'Игры'; en = 'Games' }
+    dev        = @{ ru = 'Разработка и AI'; en = 'Development & AI' }
+    comms      = @{ ru = 'Связь и интернет'; en = 'Chat & Internet' }
+    media      = @{ ru = 'Медиа'; en = 'Media' }
+    hardware   = @{ ru = 'Оборудование'; en = 'Hardware' }
+    system     = @{ ru = 'Система'; en = 'System' }
+    other      = @{ ru = 'Прочее'; en = 'Misc' }
+}
+
+function Get-DefaultLanguage {
+    # язык Windows, а не потоковая культура: в PowerShell 5.1 CurrentUICulture
+    # всегда en-US, поэтому смотрим InstalledUICulture
+    $c = [System.Globalization.CultureInfo]::InstalledUICulture
+    if ($c -and $c.TwoLetterISOLanguageName -eq 'ru') { return 'ru' }
+    return 'en'
+}
+
+function Get-GroupName {
+    param([string]$Id, [string]$Lang)
+
+    $entry = $script:GroupNames[$Id]
+    if (-not $entry) { return $Id }
+    if ($Lang -eq 'en') { return $entry.en }
+    if ($Lang -eq 'ru') { return $entry.ru }
+    # язык не задан — берём язык системы
+    if ((Get-DefaultLanguage) -eq 'ru') { return $entry.ru }
+    return $entry.en
+}
+
 $script:GroupRules = @(
-    @{ name = 'Установщики'; color = '#B7B26A'; words = @() }
-    @{ name = 'Сеть и VPN'; color = '#9A7FE0'; words = @('vpn', 'proxy', 'zapret', 'vnc', 'ultravnc', 'tgwsproxy', 'amneziavpn', 'rudesktop', 'remote', 'wireshark', 'putty', 'anydesk', 'rustdesk', 'radmin', 'wireguard') }
-    @{ name = 'Игры'; color = '#E0A33E'; words = @('steam', 'epic games', 'faceit', 'deadlock', 'counter-strike', 'tlauncher', 'exitlag', 'happ', 'skydimo', 'riot', 'battle.net', 'ubisoft', 'gog') }
-    @{ name = 'Разработка и AI'; color = '#62C08A'; words = @('code', 'cursor', 'docker', 'harness', 'kimi', 'qwen', 'mobaxterm', 'obsidian', 'xsd', 'xsddiagram', 'git', 'python', 'node', 'studio', 'terminal', 'powershell', 'postman', 'dbeaver', 'notepad', 'wsl') }
-    @{ name = 'Связь и интернет'; color = '#4FA3E3'; words = @('telegram', 'discord', 'teamspeak', 'whatsapp', 'viber', 'skype', 'slack', 'zoom', 'teams', 'chrome', 'firefox', 'browser', 'opera') }
-    @{ name = 'Медиа'; color = '#D96A8A'; words = @('vlc', 'spotify', 'itunes', 'media', 'player', 'foobar', 'audacity') }
-    @{ name = 'Оборудование'; color = '#E07A5F'; words = @('cpuid', 'nvidia', 'redragon', 'panteon', 'epson', 'logitech', 'razer', 'hyperx', 'asus', 'msi', 'corsair', 'headset', 'mouse', 'телевизор') }
-    @{ name = 'Система'; color = '#8B98AB'; words = @('корзина') }
+    @{ id = 'installers'; color = '#B7B26A'; words = @() }
+    @{ id = 'network'; color = '#9A7FE0'; words = @('vpn', 'proxy', 'zapret', 'vnc', 'ultravnc', 'tgwsproxy', 'amneziavpn', 'rudesktop', 'remote', 'wireshark', 'putty', 'anydesk', 'rustdesk', 'radmin', 'wireguard') }
+    @{ id = 'games'; color = '#E0A33E'; words = @('steam', 'epic games', 'faceit', 'deadlock', 'counter-strike', 'tlauncher', 'exitlag', 'happ', 'skydimo', 'riot', 'battle.net', 'ubisoft', 'gog') }
+    @{ id = 'dev'; color = '#62C08A'; words = @('code', 'cursor', 'docker', 'harness', 'kimi', 'qwen', 'mobaxterm', 'obsidian', 'xsd', 'xsddiagram', 'git', 'python', 'node', 'studio', 'terminal', 'powershell', 'postman', 'dbeaver', 'notepad', 'wsl') }
+    @{ id = 'comms'; color = '#4FA3E3'; words = @('telegram', 'discord', 'teamspeak', 'whatsapp', 'viber', 'skype', 'slack', 'zoom', 'teams', 'chrome', 'firefox', 'browser', 'opera', 'edge', 'thunderbird', 'mail') }
+    @{ id = 'media'; color = '#D96A8A'; words = @('vlc', 'spotify', 'itunes', 'media', 'player', 'foobar', 'audacity') }
+    @{ id = 'hardware'; color = '#E07A5F'; words = @('cpuid', 'nvidia', 'redragon', 'panteon', 'epson', 'logitech', 'razer', 'hyperx', 'asus', 'msi', 'corsair', 'headset', 'mouse', 'телевизор', 'monitor', 'keyboard') }
+    @{ id = 'system'; color = '#8B98AB'; words = @('корзина', 'recycle bin', 'recycle') }
 )
 
 # ---------------------------------------------------------------- сканирование
@@ -106,9 +139,12 @@ function Get-DesktopItems {
     }
 
     # Корзина живёт в оболочке, а не на диске: добавляем кандидата,
-    # Sync-ItemNames уберёт его, если такого элемента в виде нет
-    if (-not $seen.ContainsKey('корзина')) {
-        $items += [pscustomobject]@{ name = 'Корзина'; base = 'Корзина'; ext = ''; path = ''; kind = 'system' }
+    # Sync-ItemNames уберёт его, если такого элемента в виде нет.
+    # Имя берём на языке интерфейса, чтобы совпасть с тем, что видно на столе.
+    $bin = 'Корзина'
+    if ((Get-DefaultLanguage) -ne 'ru') { $bin = 'Recycle Bin' }
+    if (-not $seen.ContainsKey($bin.ToLower())) {
+        $items += [pscustomobject]@{ name = $bin; base = $bin; ext = ''; path = ''; kind = 'system' }
     }
 
     if ($AlignWithView) { $items = Sync-ItemNames -Items $items }
@@ -119,7 +155,7 @@ function Get-DesktopItems {
 # ---------------------------------------------------------------- группы
 
 function New-ProposedGroups {
-    param($Items)
+    param($Items, [string]$Lang)
 
     $groups = @()
     $used = @{}
@@ -131,7 +167,7 @@ function New-ProposedGroups {
             $low = $it.name.ToLower()
             $hit = $false
 
-            if ($rule.name -eq 'Установщики') {
+            if ($rule.id -eq 'installers') {
                 if ($it.kind -eq 'file' -and ($it.ext -eq '.exe' -or $it.ext -eq '.msi')) {
                     foreach ($w in @('setup', 'install', '-x64', '-x86', '_x64', '_x86')) {
                         if ($low.Contains($w)) { $hit = $true; break }
@@ -153,13 +189,23 @@ function New-ProposedGroups {
             }
         }
         if ($members.Count -gt 0) {
-            $groups += [pscustomobject]@{ name = $rule.name; color = $rule.color; items = $members }
+            $groups += [pscustomobject]@{
+                name  = (Get-GroupName -Id $rule.id -Lang $Lang)
+                color = $rule.color
+                items = $members
+                id    = $rule.id
+            }
         }
     }
 
     $rest = @($Items | Where-Object { -not $used.ContainsKey($_.name) } | ForEach-Object { $_.name })
     if ($rest.Count -gt 0) {
-        $groups += [pscustomobject]@{ name = 'Прочее'; color = '#8C8C8C'; items = $rest }
+        $groups += [pscustomobject]@{
+            name  = (Get-GroupName -Id 'other' -Lang $Lang)
+            color = '#8C8C8C'
+            items = $rest
+            id    = 'other'
+        }
     }
 
     return , $groups
@@ -342,8 +388,40 @@ function New-RoundRectPath {
     return $p
 }
 
+# Загружает картинку в память и отдаёт её вместе с потоком.
+# Image::FromFile держал бы файл заблокированным до конца работы программы,
+# поэтому читаем байты и разбираем из памяти. Вызывающий обязан всё освободить.
+function Get-BackgroundImage {
+    param([string]$Path, [int]$MaxBytes = 104857600)   # 100 МБ — защита от абсурдных файлов
+
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $null }
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
+
+    $info = Get-Item -LiteralPath $Path -ErrorAction Stop
+    if ($info.Length -le 0) { return $null }
+    if ($info.Length -gt $MaxBytes) { throw ('файл фона слишком большой: {0} МБ' -f [math]::Round($info.Length / 1MB, 1)) }
+
+    $bytes = [IO.File]::ReadAllBytes($info.FullName)
+    $ms = New-Object System.IO.MemoryStream(, $bytes)
+    try {
+        $img = [System.Drawing.Image]::FromStream($ms)
+    }
+    catch {
+        $ms.Dispose()
+        throw
+    }
+    return [pscustomobject]@{ Image = $img; Stream = $ms }
+}
+
 function Save-Wallpaper {
-    param($Layout, [string]$Path, [int]$Width = 1920, [int]$Height = 1080, [int]$Pad = 12)
+    param(
+        $Layout,
+        [string]$Path,
+        [int]$Width = 1920,
+        [int]$Height = 1080,
+        [int]$Pad = 12,
+        [string]$BackgroundImage
+    )
 
     $bmp = New-Object System.Drawing.Bitmap($Width, $Height, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
     $g = [System.Drawing.Graphics]::FromImage($bmp)
@@ -351,13 +429,68 @@ function Save-Wallpaper {
     $g.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::ClearTypeGridFit
 
     $rect = New-Object System.Drawing.Rectangle(0, 0, $Width, $Height)
-    $brush = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
-        $rect,
-        [System.Drawing.Color]::FromArgb(13, 16, 22),
-        [System.Drawing.Color]::FromArgb(24, 29, 41),
-        90)
-    $g.FillRectangle($brush, $rect)
-    $brush.Dispose()
+
+    # --- подложка: картинка пользователя, а без неё — градиент
+    $hasPhoto = $false
+    if ($BackgroundImage) {
+        $loaded = $null
+        try {
+            $loaded = Get-BackgroundImage -Path $BackgroundImage
+            if ($loaded) {
+                # заполняем холст целиком с сохранением пропорций (как «Заполнение»)
+                $scale = [Math]::Max($Width / [double]$loaded.Image.Width, $Height / [double]$loaded.Image.Height)
+                $dw = [int][Math]::Ceiling($loaded.Image.Width * $scale)
+                $dh = [int][Math]::Ceiling($loaded.Image.Height * $scale)
+                $dx = [int](($Width - $dw) / 2)
+                $dy = [int](($Height - $dh) / 2)
+
+                $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+                $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+                $g.DrawImage($loaded.Image, (New-Object System.Drawing.Rectangle($dx, $dy, $dw, $dh)))
+                $hasPhoto = $true
+            }
+        }
+        catch {
+            # битый или недоступный файл не должен ломать обои
+            $hasPhoto = $false
+        }
+        finally {
+            if ($loaded) {
+                $loaded.Image.Dispose()
+                $loaded.Stream.Dispose()
+            }
+        }
+    }
+
+    if ($hasPhoto) {
+        # Затемняем фото, чтобы подписи читались, но сама картинка оставалась
+        # видна: сверху чуть плотнее (там подписи), снизу светлее.
+        $scrimRect = New-Object System.Drawing.Rectangle(0, 0, $Width, $Height)
+        $scrim = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+            $scrimRect,
+            [System.Drawing.Color]::FromArgb(120, 0, 0, 0),
+            [System.Drawing.Color]::FromArgb(70, 0, 0, 0),
+            90)
+        $g.FillRectangle($scrim, $scrimRect)
+        $scrim.Dispose()
+    }
+    else {
+        $brush = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+            $rect,
+            [System.Drawing.Color]::FromArgb(13, 16, 22),
+            [System.Drawing.Color]::FromArgb(24, 29, 41),
+            90)
+        $g.FillRectangle($brush, $rect)
+        $brush.Dispose()
+    }
+
+    $plateAlpha = 26
+    $outlineAlpha = 150
+    if ($hasPhoto) {
+        # на фотографии блок должен быть заметнее
+        $plateAlpha = 46
+        $outlineAlpha = 190
+    }
 
     foreach ($b in $Layout.blocks) {
         $c = Convert-HexColor $b.color
@@ -367,10 +500,10 @@ function Save-Wallpaper {
         $bh = $b.h + 2 * $Pad
 
         $gp = New-RoundRectPath $x0 $y0 $bw $bh 16
-        $fill = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(26, $c.R, $c.G, $c.B))
+        $fill = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb($plateAlpha, $c.R, $c.G, $c.B))
         $g.FillPath($fill, $gp)
         $fill.Dispose()
-        $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(150, $c.R, $c.G, $c.B), 2)
+        $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb($outlineAlpha, $c.R, $c.G, $c.B), 2)
         $g.DrawPath($pen, $gp)
         $pen.Dispose()
         $gp.Dispose()
@@ -383,20 +516,30 @@ function Save-Wallpaper {
             $size -= 0.5
             $font = New-Object System.Drawing.Font('Segoe UI', [single]$size, [System.Drawing.FontStyle]::Bold)
         }
+
+        $textRect = New-Object System.Drawing.RectangleF([single]($x0 + 10), [single]($y0 - 31), [single]($bw - 16), [single]20)
+
+        # тёмная плашка под подписью: текст читается и на светлом фото
+        $tw = [Math]::Min(($bw - 8), ($g.MeasureString($b.name, $font).Width + 14))
+        $plate = New-RoundRectPath ($x0 + 2) ($y0 - 32) $tw 22 6
+        $plateBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(170, 12, 16, 24))
+        $g.FillPath($plateBrush, $plate)
+        $plateBrush.Dispose()
+        $plate.Dispose()
+
         $tb = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(240, $c.R, $c.G, $c.B))
         # длинное название не должно вылезать за рамку и наезжать на соседей
         $fmt = New-Object System.Drawing.StringFormat
         $fmt.Trimming = [System.Drawing.StringTrimming]::EllipsisCharacter
         $fmt.FormatFlags = [System.Drawing.StringFormatFlags]::NoWrap
-        $textRect = New-Object System.Drawing.RectangleF([single]($x0 + 10), [single]($y0 - 31), [single]($bw - 16), [single]20)
         $g.DrawString($b.name, $font, $tb, $textRect, $fmt)
         $fmt.Dispose()
         $tb.Dispose()
         $font.Dispose()
 
         # засечка у левого края подписи
-        $tick = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(220, $c.R, $c.G, $c.B))
-        $g.FillRectangle($tick, [single]$x0, [single]($y0 - 26), [single]3, [single]14)
+        $tick = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(230, $c.R, $c.G, $c.B))
+        $g.FillRectangle($tick, [single]($x0 + 5), [single]($y0 - 27), [single]3, [single]13)
         $tick.Dispose()
     }
 
