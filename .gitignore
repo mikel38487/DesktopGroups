@@ -1,0 +1,9 @@
+# пользовательские данные и артефакты запуска
+config.json
+wallpaper.png
+backups/
+build/
+*.log
+
+# временное
+*.tmp
