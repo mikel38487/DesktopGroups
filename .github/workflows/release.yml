@@ -1,0 +1,44 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Тег для релиза, например v1.0.0'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Проверки перед релизом
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\smoke.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Smoke-тесты провалены — релиз остановлен" }
+
+      - name: Сборка архива
+        shell: pwsh
+        run: .\tools\build-package.ps1 -Output dist
+
+      - name: Публикация релиза
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { '${{ inputs.tag }}' }
+          $zip = Get-ChildItem dist\*.zip | Select-Object -First 1
+          if (-not $zip) { throw "архив не собран" }
+          gh release create $tag $zip.FullName --title $tag --generate-notes
+          Write-Host "релиз $tag опубликован"

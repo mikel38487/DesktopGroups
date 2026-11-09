@@ -14,6 +14,9 @@ Add-Type -AssemblyName Microsoft.VisualBasic
 $script:AppDir = $PSScriptRoot
 if ($ConfigPath) { $script:ConfigPath = $ConfigPath } else { $script:ConfigPath = Join-Path $script:AppDir 'config.json' }
 $script:BackupDir = Join-Path $script:AppDir 'backups'
+$script:Version = '0.0.0'
+$verFile = Join-Path $script:AppDir 'VERSION'
+if (Test-Path -LiteralPath $verFile) { $script:Version = (Get-Content -LiteralPath $verFile -Raw).Trim() }
 $script:Groups = New-Object System.Collections.ArrayList
 $script:Items = @()
 $script:Screen = Get-ScreenInfo
@@ -30,11 +33,13 @@ function Save-Config {
     [IO.File]::WriteAllText($script:ConfigPath, $json, [Text.UTF8Encoding]::new($true))
 }
 
-function Load-Config {
+function Import-Config {
     if (-not (Test-Path -LiteralPath $script:ConfigPath)) { return $false }
     try {
         $raw = [IO.File]::ReadAllText($script:ConfigPath, [Text.UTF8Encoding]::new($true))
         $data = $raw | ConvertFrom-Json
+        # пустой файл и мусор разбираются в $null без исключения — проверяем явно
+        if ($null -eq $data -or $null -eq $data.groups) { return $false }
         $script:Groups.Clear()
         foreach ($g in $data.groups) {
             [void]$script:Groups.Add([pscustomobject]@{
@@ -81,7 +86,7 @@ function Get-UnassignedItems {
 # ---------------------------------------------------------------- интерфейс
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = 'DesktopGroups — группы ярлыков рабочего стола'
+$form.Text = 'DesktopGroups ' + $script:Version + ' — группы ярлыков рабочего стола'
 $form.Size = New-Object System.Drawing.Size(1140, 760)
 $form.StartPosition = 'CenterScreen'
 $form.MinimumSize = New-Object System.Drawing.Size(1000, 700)
@@ -584,12 +589,14 @@ $form.Add_Shown({
             $view = Get-DesktopView
             $script:Grid = Get-ViewGridStep $view
         }
-        catch { }
+        catch {
+            $script:GridNote = 'сетка по умолчанию: ' + $_.Exception.Message
+        }
         finally {
             if ($view) { Close-DesktopView $view }
         }
 
-        if (-not (Load-Config)) {
+        if (-not (Import-Config)) {
             $proposed = New-ProposedGroups $script:Items
             foreach ($g in $proposed) { [void]$script:Groups.Add($g) }
             Save-Config
@@ -597,9 +604,13 @@ $form.Add_Shown({
         Update-GroupList
         Update-ItemList
         Update-Preview
-        $status.Text = 'Значков: {0}. Сетка {1}×{2}. Конфиг: {3}' -f $script:Items.Count, $script:Grid.stepX, $script:Grid.stepY, $script:ConfigPath
+        $status.Text = 'Значков: {0}. Сетка {1}×{2}. Версия {3}. Конфиг: {4}' -f $script:Items.Count, $script:Grid.stepX, $script:Grid.stepY, $script:Version, $script:ConfigPath
+        if ($script:GridNote) { $status.Text = $script:GridNote + ' | ' + $status.Text }
     })
 
-$form.Add_FormClosing({ try { Save-Config } catch { } })
+$form.Add_FormClosing({
+        try { Save-Config }
+        catch { Write-Warning ('конфиг не сохранён: ' + $_.Exception.Message) }
+    })
 
 [void]$form.ShowDialog()

@@ -5,8 +5,10 @@
 if (-not ('DesktopIconsNative' -as [type])) {
     Add-Type -Path (Join-Path $PSScriptRoot 'DesktopIcons.cs')
 }
-try { Add-Type -AssemblyName System.Drawing -ErrorAction Stop } catch { }
-try { Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop } catch { }
+try { Add-Type -AssemblyName System.Drawing -ErrorAction Stop }
+catch { Write-Verbose 'System.Drawing недоступен — обои сгенерировать не получится' }
+try { Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop }
+catch { Write-Verbose 'System.Windows.Forms недоступен — размеры экрана будут по умолчанию' }
 
 $script:Palette = @(
     '#8B98AB', '#E0A33E', '#D96A8A', '#4FA3E3', '#62C08A',
@@ -169,21 +171,31 @@ function New-Layout {
         $n = @($g.items).Count
         if ($n -eq 0) { continue }
 
-        # форма блока: меньше пустых ячеек, ближе к квадрату
+        # форма блока: меньше пустых ячеек, ближе к квадрату;
+        # пределы берём из экрана, иначе большая группа уедет за край
+        $maxCols = [int][math]::Floor(($Screen.width - 2 * $margin) / $stepX)
+        $maxRows = [int][math]::Floor(($Screen.workHeight - $top - $margin) / $stepY)
+        if ($maxCols -lt 1) { $maxCols = 1 }
+        if ($maxRows -lt 1) { $maxRows = 1 }
+
         $best = $null
         $bestScore = [double]::MaxValue
-        for ($rows = 1; $rows -le 4; $rows++) {
+        for ($rows = 1; $rows -le $maxRows; $rows++) {
             $cols = [int][math]::Ceiling($n / $rows)
-            if ($cols -gt 6) { continue }
+            if ($cols -gt $maxCols) { continue }
             $holes = $cols * $rows - $n
             $score = $holes * 10 + [math]::Abs($cols - $rows)
+            if ($cols -gt 6) { $score += 100 }   # компактный блок лучше широкой полосы
             if ($score -lt $bestScore) {
                 $bestScore = $score
                 $best = @{ rows = $rows; cols = $cols }
             }
         }
         if ($null -eq $best) {
-            $best = @{ rows = 4; cols = [int][math]::Ceiling($n / 4) }
+            # группа больше экрана: режем по ширине, остальное уйдёт в переполнение
+            $cols = $maxCols
+            $rows = [int][math]::Ceiling($n / $cols)
+            $best = @{ rows = $rows; cols = $cols }
         }
 
         $cols = $best.cols

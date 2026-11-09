@@ -1,4 +1,4 @@
-﻿# DesktopGroups
+# DesktopGroups
 
 Group desktop shortcuts into rectangles — and let the wallpaper draw the frames
 and labels for those groups.
@@ -34,6 +34,27 @@ no longer match — re-apply the layout and both are rebuilt from one plan.
 - Windows PowerShell 5.1 (built in). PowerShell 7 works for the engine, the GUI is
   started through `powershell.exe`.
 - No administrator rights, no external packages, no network.
+
+## Install
+
+Nothing to compile: the program is plain PowerShell plus one C# helper that is
+compiled in memory at startup by `Add-Type`.
+
+1. Download `DesktopGroups-<version>.zip` from the [Releases](../../releases) page
+   and unpack it anywhere.
+2. If Windows marked the files as downloaded, right-click the ZIP →
+   **Properties** → **Unblock**, or run
+   `Get-ChildItem -Recurse | Unblock-File` in the unpacked folder.
+3. Run **`install.cmd`**. It copies the program to
+   `%LOCALAPPDATA%\Programs\DesktopGroups`, creates a Start Menu shortcut and an
+   entry in *Apps & features*. No administrator rights are needed.
+4. Start it from the Start Menu.
+
+Prefer a portable setup? Skip `install.cmd` and run `DesktopGroups.cmd` from the
+unpacked folder — nothing is written outside that folder except your own
+`config.json` and `wallpaper.png`.
+
+To remove it, use *Apps & features* in Windows settings, or run `uninstall.cmd`.
 
 ## Usage
 
@@ -136,6 +157,27 @@ DesktopGroups делает наоборот: рамки групп **впеча�
 - Windows PowerShell 5.1 (встроен). Движок работает и в PowerShell 7, GUI
   запускается через `powershell.exe`.
 - Без прав администратора, без внешних пакетов и сети.
+
+## Установка
+
+Компилировать ничего не нужно: программа — это PowerShell плюс один C#-файл,
+который собирается в памяти при старте через `Add-Type`.
+
+1. Скачайте `DesktopGroups-<версия>.zip` со страницы [Releases](../../releases)
+   и распакуйте в любую папку.
+2. Если Windows пометила файлы как скачанные — правый клик по ZIP →
+   **Свойства** → **Разблокировать**, либо в распакованной папке выполните
+   `Get-ChildItem -Recurse | Unblock-File`.
+3. Запустите **`install.cmd`**. Он скопирует программу в
+   `%LOCALAPPDATA%\Programs\DesktopGroups`, сделает ярлык в меню «Пуск» и запись
+   в списке приложений. Права администратора не нужны.
+4. Запускайте из меню «Пуск».
+
+Нужен портативный вариант? Не запускайте `install.cmd`, а запустите
+`DesktopGroups.cmd` прямо из распакованной папки — вне неё появятся только
+ваши `config.json` и `wallpaper.png`.
+
+Удаление — через «Приложения» в параметрах Windows или `uninstall.cmd`.
 
 ## Как пользоваться
 
