@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Runtime.InteropServices;
 
 public static class DesktopIconsNative
@@ -46,6 +46,21 @@ public static class DesktopIconsNative
 
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool CloseHandle(IntPtr hObject);
+
+    [DllImport("user32.dll")]
+    public static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool SetProcessDpiAwarenessContext(IntPtr value);
+
+    // Без этого процесса-осведомлённости Windows виртуализует экранные метрики
+    // при масштабировании, а ListView отдаёт физические пиксели — координаты
+    // раскладки и обоев расходятся. PER_MONITOR_AWARE_V2 = -4.
+    public static bool EnableDpiAwareness()
+    {
+        try { return SetProcessDpiAwarenessContext(new IntPtr(-4)); }
+        catch { return false; }
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     public struct LVITEM

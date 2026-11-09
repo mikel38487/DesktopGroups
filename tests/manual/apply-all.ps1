@@ -1,41 +1,43 @@
-﻿$ErrorActionPreference = 'Stop'
-. 'F:\AI\DesktopGroups\lib\Engine.ps1'
+﻿# Ручной тест: РАСКЛАДЫВАЕТ значки и ставит обои. В CI не запускается.
+# Запуск: $env:DESKTOPGROUPS_MANUAL_TESTS = 1 ; powershell -File tests\manual\apply-all.ps1
 
-$dir = 'F:\AI\DesktopGroups'
+if (-not $env:DESKTOPGROUPS_MANUAL_TESTS) {
+    Write-Host 'Это ручной тест: он меняет раскладку и обои рабочего стола.'
+    Write-Host 'Запуск: $env:DESKTOPGROUPS_MANUAL_TESTS = 1 ; powershell -File tests\manual\apply-all.ps1'
+    exit 2
+}
 
-# 1. скан
+$ErrorActionPreference = 'Stop'
+$root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+. (Join-Path $root 'lib\Engine.ps1')
+
 $items = Get-DesktopItems
 "значков: $($items.Count)"
 
-# 2. предложение групп
 $groups = New-ProposedGroups $items
 "групп: $($groups.Count)"
 
-# 3. конфиг
 $data = @{ groups = @(); updated = (Get-Date -Format 'yyyy-MM-dd HH:mm') }
 foreach ($g in $groups) { $data.groups += @{ name = $g.name; color = $g.color; items = @($g.items) } }
-[IO.File]::WriteAllText((Join-Path $dir 'config.json'), ($data | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($true))
+[IO.File]::WriteAllText((Join-Path $root 'config.json'), ($data | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($true))
 "конфиг записан"
 
-# 4. раскладка
 $view = Get-DesktopView
 try { $grid = Get-ViewGridStep $view } finally { Close-DesktopView $view }
 $layout = New-Layout $groups (Get-ScreenInfo) $grid
 "блоков: $($layout.blocks.Count), переполнение: $($layout.overflow)"
 
-# 5. применение
-$res = Invoke-DesktopLayout $layout (Join-Path $dir 'backups')
+$res = Invoke-DesktopLayout $layout (Join-Path $root 'backups')
 "расставлено: $($res.placed), проходов: $($res.passes), расхождений: $($res.mismatches.Count)"
 foreach ($m in $res.mismatches) { "  не встало: $($m.name) ждали $($m.expected), факт $($m.actual)" }
 foreach ($u in $res.unknown) { "  вне плана: $u" }
 
-# 6. обои
-$png = Join-Path $dir 'wallpaper.png'
-$null = Save-Wallpaper $layout $png
+$screen = Get-ScreenInfo
+$png = Join-Path $root 'wallpaper.png'
+$null = Save-Wallpaper $layout $png $screen.width $screen.height
 $ok = Set-DesktopWallpaper $png
-"обои: $png, $((Get-Item $png).Length) байт, применены: $ok"
+"обои: $png, применены: $ok"
 
-# 7. контрольная сверка
 $view = Get-DesktopView
 try { $actual = Read-ViewItems $view } finally { Close-DesktopView $view }
 $bad = 0

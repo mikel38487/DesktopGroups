@@ -61,6 +61,24 @@ $assigned = @()
 foreach ($g in $groups) { $assigned += @($g.items) }
 Check 'все значки распределены ровно один раз' (($assigned | Sort-Object) -join '|' -eq (($items | ForEach-Object { $_.name } | Sort-Object) -join '|'))
 
+# --- эвристики: совпадение по слову, а не по подстроке ---
+$tricky = @(
+    (New-FakeItem 'Codecs' '.lnk' 'shortcut')
+    (New-FakeItem 'Digit' '.lnk' 'shortcut')
+    (New-FakeItem 'Anode' '.lnk' 'shortcut')
+    (New-FakeItem 'Immediate' '.lnk' 'shortcut')
+    (New-FakeItem 'UltraVNC Launcher' '.lnk' 'shortcut')
+)
+$trickyGroups = New-ProposedGroups $tricky
+$tmap = @{}
+foreach ($g in $trickyGroups) { $tmap[$g.name] = @($g.items) }
+
+Check 'Codecs не попал в разработку' (-not ($tmap['Разработка и AI'] -contains 'Codecs'))
+Check 'Digit не попал в разработку' (-not ($tmap['Разработка и AI'] -contains 'Digit'))
+Check 'Anode не попал в разработку' (-not ($tmap['Разработка и AI'] -contains 'Anode'))
+Check 'Immediate не попал в медиа' (-not ($tmap['Медиа'] -contains 'Immediate'))
+Check 'UltraVNC попал в сеть' ($tmap['Сеть и VPN'] -contains 'UltraVNC Launcher')
+
 # --- раскладка ---
 $screen = [pscustomobject]@{ width = 1920; height = 1080; workHeight = 1032 }
 $grid = [pscustomobject]@{ stepX = 76; stepY = 100; margin = 14; top = 202 }

@@ -13,7 +13,7 @@ $source = Split-Path -Parent $PSScriptRoot
 $dest = Join-Path $env:LOCALAPPDATA 'Programs\DesktopGroups'
 
 $skipDirs = @('.git', '.github', 'docs', 'tests', 'dist', 'backups', 'build')
-$skipFiles = @('config.json', 'wallpaper.png', '.gitignore', '.gitattributes')
+$skipFiles = @('config.json', 'wallpaper.png', '.gitignore', '.gitattributes', 'PSScriptAnalyzerSettings.psd1')
 
 $version = '0.0.0'
 $verFile = Join-Path $source 'VERSION'
@@ -35,6 +35,19 @@ foreach ($item in Get-ChildItem -LiteralPath $source -Force) {
 
 $psExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 $appScript = Join-Path $dest 'DesktopGroups.ps1'
+
+# запоминаем текущие обои, чтобы вернуть их при удалении
+# (при повторной установке не перезаписываем — иначе запомним свои же обои)
+$prevFile = Join-Path $dest 'previous-wallpaper.json'
+if (-not (Test-Path -LiteralPath $prevFile)) {
+    $cur = Get-ItemProperty -Path 'HKCU:\Control Panel\Desktop'
+    @{
+        Wallpaper      = [string]$cur.Wallpaper
+        WallpaperStyle = [string]$cur.WallpaperStyle
+        TileWallpaper  = [string]$cur.TileWallpaper
+    } | ConvertTo-Json | Set-Content -LiteralPath $prevFile -Encoding UTF8
+    Write-Host 'обои до установки запомнены'
+}
 
 function New-Shortcut {
     param([string]$Path)

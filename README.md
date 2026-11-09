@@ -10,8 +10,11 @@ as an **overlay window** on top of the desktop. That means a resident process,
 hooks into Explorer, and a group that disappears when the tool is not running.
 
 DesktopGroups does the opposite: it **bakes the group frames into the wallpaper**.
-There is no background process, nothing is injected into Explorer, the desktop stays
-a normal desktop, and the groups survive reboots because they are just icons on a grid.
+There is no background process and no overlay window; the desktop stays a normal
+desktop, and the groups survive reboots because they are just icons on a grid.
+Icon positions are set through the desktop list view's own `LVM_*` messages —
+no code is injected into Explorer, only the item-position structures it already
+understands (details in `SECURITY.md`).
 
 The trade-off is honest: frames are static. Move an icon by hand and the frame will
 no longer match — re-apply the layout and both are rebuilt from one plan.
@@ -61,7 +64,7 @@ To remove it, use *Apps & features* in Windows settings, or run `uninstall.cmd`.
 Run `DesktopGroups.cmd` (double click). Or:
 
 ```powershell
-powershell.exe -STA -File .\DesktopGroups.ps1
+powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\DesktopGroups.ps1
 ```
 
 Typical flow:
@@ -71,6 +74,35 @@ Typical flow:
 3. **Новая / Переименовать / Удалить / ↑ ↓** — build your own set.
 4. **Добавить значки…** — move shortcuts into the selected group.
 5. **Разложить значки и обновить обои** — place icons and redraw the wallpaper.
+
+## Troubleshooting
+
+**Windows says "running scripts is disabled on this system".**
+Launch through `DesktopGroups.cmd` or `install.cmd`: they pass
+`-ExecutionPolicy Bypass` for that one process. The system-wide policy is not
+changed. If the policy is enforced by group policy (`MachinePolicy`), `Bypass`
+will not help — that is a machine restriction.
+
+**SmartScreen or "Windows protected your PC".**
+The files are not code-signed. Right-click the ZIP → **Properties** →
+**Unblock** before unpacking, or run `Get-ChildItem -Recurse | Unblock-File`
+in the unpacked folder.
+
+**Antivirus flags the program.**
+`lib\DesktopIcons.cs` is compiled in memory at startup and calls
+`WriteProcessMemory` into `explorer.exe` — this is how icon positions are set
+without an Explorer restart. Some heuristics dislike that combination. The whole
+source is here; you can read exactly what is written (an `LVITEM`/`POINT`
+structure, nothing else) and check it with PSScriptAnalyzer.
+
+**Frames do not line up with the icons.**
+The wallpaper is generated at the size of your current screen. If you changed
+resolution or DPI after applying, press **Разложить значки и обновить обои**
+again.
+
+**Icons moved by themselves.**
+"Auto arrange icons" is on. Turn it off: right-click the desktop →
+**View** → uncheck **Auto arrange icons**.
 
 ## How it works
 
@@ -114,6 +146,25 @@ both come from one plan, frames always match the grid.
 - Blocks that do not fit the screen are reported as overflow and packed anyway.
 - No drag & drop on the desktop itself: groups are edited in the app.
 
+## Development
+
+Checks that never touch the desktop (these run in CI):
+
+```powershell
+powershell.exe -NoProfile -File .\tests\check-encoding.ps1   # BOM + parser under 5.1 and 7
+powershell.exe -NoProfile -File .\tests\smoke.ps1            # grouping, layout, wallpaper
+powershell.exe -NoProfile -File .\tests\fuzz-config.ps1      # junk values in config.json
+Invoke-ScriptAnalyzer -Path . -Recurse -Settings .\PSScriptAnalyzerSettings.psd1
+```
+
+Manual tests really move icons and change the wallpaper, so they stay off
+unless you opt in:
+
+```powershell
+$env:DESKTOPGROUPS_MANUAL_TESTS = 1
+powershell.exe -File .\tests\manual\apply-all.ps1
+```
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
@@ -132,8 +183,10 @@ MIT — see [LICENSE](LICENSE).
 Explorer, и без запущенной программы групп нет.
 
 DesktopGroups делает наоборот: рамки групп **впечатаны в обои**. Нет фонового
-процесса, ничего не внедряется в Explorer, рабочий стол остаётся обычным, а группы
-переживают перезагрузку — это просто значки на сетке.
+процесса и оверлей-окна, рабочий стол остаётся обычным, а группы переживают
+перезагрузку — это просто значки на сетке. Позиции значков задаются сообщениями
+`LVM_*` самому списку значков: код в Explorer не внедряется, передаются только
+структуры позиций, которые он и так понимает (подробности в `SECURITY.md`).
 
 Плата честная: рамки статичны. Подвинули ярлык руками — рамка перестанет совпадать;
 повторное применение раскладки перестроит и то и другое из одного плана.
@@ -184,7 +237,7 @@ DesktopGroups делает наоборот: рамки групп **впеча�
 Запустить `DesktopGroups.cmd` двойным щелчком. Либо:
 
 ```powershell
-powershell.exe -STA -File .\DesktopGroups.ps1
+powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\DesktopGroups.ps1
 ```
 
 Порядок:
@@ -237,6 +290,25 @@ powershell.exe -STA -File .\DesktopGroups.ps1
 - Только основной монитор.
 - Блоки, не влезающие на экран, помечаются как переполнение, но всё равно пакуются.
 - Перетаскивания мышью по рабочему столу нет: группы правятся в окне программы.
+
+## Разработка
+
+Проверки, которые не трогают рабочий стол (их и запускает CI):
+
+```powershell
+powershell.exe -NoProfile -File .\tests\check-encoding.ps1   # BOM и разбор под 5.1 и 7
+powershell.exe -NoProfile -File .\tests\smoke.ps1            # группы, раскладка, обои
+powershell.exe -NoProfile -File .\tests\fuzz-config.ps1      # мусор в config.json
+Invoke-ScriptAnalyzer -Path . -Recurse -Settings .\PSScriptAnalyzerSettings.psd1
+```
+
+Ручные тесты действительно двигают значки и меняют обои, поэтому по умолчанию
+выключены:
+
+```powershell
+$env:DESKTOPGROUPS_MANUAL_TESTS = 1
+powershell.exe -File .\tests\manual\apply-all.ps1
+```
 
 ## Лицензия
 

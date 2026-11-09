@@ -12,7 +12,21 @@ Add-Type -AssemblyName Microsoft.VisualBasic
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
 $script:AppDir = $PSScriptRoot
-if ($ConfigPath) { $script:ConfigPath = $ConfigPath } else { $script:ConfigPath = Join-Path $script:AppDir 'config.json' }
+$script:ConfigNote = ''
+if ($ConfigPath) {
+    $full = [IO.Path]::GetFullPath($ConfigPath)
+    if ([IO.Path]::GetExtension($full) -eq '.json') {
+        $script:ConfigPath = $full
+    }
+    else {
+        # не даём писать JSON куда угодно: параметр принимаем только для .json
+        $script:ConfigPath = Join-Path $script:AppDir 'config.json'
+        $script:ConfigNote = 'параметр -ConfigPath не указывает на .json — взят конфиг по умолчанию'
+    }
+}
+else {
+    $script:ConfigPath = Join-Path $script:AppDir 'config.json'
+}
 $script:BackupDir = Join-Path $script:AppDir 'backups'
 $script:Version = '0.0.0'
 $verFile = Join-Path $script:AppDir 'VERSION'
@@ -30,31 +44,63 @@ function Save-Config {
         $data.groups += @{ name = $g.name; color = $g.color; items = @($g.items) }
     }
     $json = $data | ConvertTo-Json -Depth 5
-    [IO.File]::WriteAllText($script:ConfigPath, $json, [Text.UTF8Encoding]::new($true))
+    # атомарная запись: пишем во временный файл и переименовываем поверх.
+    # File.Replace здесь не годится: PowerShell подставляет пустую строку
+    # вместо $null в третий аргумент, и вызов падает.
+    $tmp = $script:ConfigPath + '.tmp'
+    [IO.File]::WriteAllText($tmp, $json, [Text.UTF8Encoding]::new($true))
+    try {
+        Move-Item -LiteralPath $tmp -Destination $script:ConfigPath -Force
+    }
+    catch {
+        Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+        throw
+    }
 }
 
 function Import-Config {
     if (-not (Test-Path -LiteralPath $script:ConfigPath)) { return $false }
+
+    $data = $null
     try {
         $raw = [IO.File]::ReadAllText($script:ConfigPath, [Text.UTF8Encoding]::new($true))
         $data = $raw | ConvertFrom-Json
-        # пустой файл и мусор разбираются в $null без исключения — проверяем явно
-        if ($null -eq $data -or $null -eq $data.groups) { return $false }
-        $script:Groups.Clear()
-        foreach ($g in $data.groups) {
-            [void]$script:Groups.Add([pscustomobject]@{
-                name  = [string]$g.name
-                color = [string]$g.color
-                items = @($g.items)
-            })
-        }
-        # имена в конфиге могли разойтись с реальными — сопоставляем по базовому имени
-        $null = Resolve-GroupItems $script:Groups $script:Items
-        return $true
     }
     catch {
+        $data = $null
+    }
+
+    # пустой файл и мусор разбираются в $null без исключения — проверяем явно
+    if ($null -eq $data -or $null -eq $data.groups) {
+        # не теряем файл пользователя: откладываем рядом с отметкой времени
+        $bad = Join-Path $script:AppDir ('config.bad-{0}.json' -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
+        try { Move-Item -LiteralPath $script:ConfigPath -Destination $bad -Force }
+        catch { $bad = $script:ConfigPath }
+        $script:ConfigBroken = $bad
         return $false
     }
+
+    $script:Groups.Clear()
+    foreach ($g in @($data.groups)) {
+        # значения из файла — недоверенный ввод: приводим типы и отбрасываем мусор
+        $name = [string]$g.name
+        if ($name.Length -gt 200) { $name = $name.Substring(0, 200) }
+        if (-not $name.Trim()) { continue }
+
+        $color = [string]$g.color
+        if ($color -notmatch '^#[0-9A-Fa-f]{6}$') { $color = Get-NextColor $script:Groups }
+
+        $items = @(@($g.items) | ForEach-Object { [string]$_ } | Where-Object { $_ })
+
+        [void]$script:Groups.Add([pscustomobject]@{
+            name  = $name
+            color = $color
+            items = $items
+        })
+    }
+    # имена в конфиге могли разойтись с реальными — сопоставляем по базовому имени
+    $null = Resolve-GroupItems $script:Groups $script:Items
+    return $true
 }
 
 # ---------------------------------------------------------------- группы
@@ -87,9 +133,14 @@ function Get-UnassignedItems {
 
 $form = New-Object System.Windows.Forms.Form
 $form.Text = 'DesktopGroups ' + $script:Version + ' — группы ярлыков рабочего стола'
-$form.Size = New-Object System.Drawing.Size(1140, 760)
+# на маленьких экранах окно не должно вылезать за рабочую область
+$work = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+$winW = [Math]::Min(1140, $work.Width - 20)
+$winH = [Math]::Min(760, $work.Height - 20)
+$form.Size = New-Object System.Drawing.Size($winW, $winH)
+$form.AutoScroll = $true
 $form.StartPosition = 'CenterScreen'
-$form.MinimumSize = New-Object System.Drawing.Size(1000, 700)
+$form.MinimumSize = New-Object System.Drawing.Size(900, 600)
 $form.Font = New-Object System.Drawing.Font('Segoe UI', 9)
 
 $status = New-Object System.Windows.Forms.Label
@@ -239,9 +290,15 @@ $btnSaveWall.Location = New-Object System.Drawing.Point(12, 75)
 $btnSaveWall.Size = New-Object System.Drawing.Size(396, 30)
 $grpActions.Controls.Add($btnSaveWall)
 
+$btnRestore = New-Object System.Windows.Forms.Button
+$btnRestore.Text = 'Вернуть прошлую раскладку'
+$btnRestore.Location = New-Object System.Drawing.Point(12, 115)
+$btnRestore.Size = New-Object System.Drawing.Size(396, 28)
+$grpActions.Controls.Add($btnRestore)
+
 $lblHelp = New-Object System.Windows.Forms.Label
-$lblHelp.Location = New-Object System.Drawing.Point(12, 118)
-$lblHelp.Size = New-Object System.Drawing.Size(396, 185)
+$lblHelp.Location = New-Object System.Drawing.Point(12, 150)
+$lblHelp.Size = New-Object System.Drawing.Size(396, 155)
 $lblHelp.Text = @"
 Как это работает
 
@@ -312,28 +369,37 @@ function Update-Preview {
 
 $preview.Add_Paint({
         param($s, $e)
-        $gfx = $e.Graphics
-        $gfx.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-        $scale = $s.Width / 1920.0
-        $groups = @($script:Groups | Where-Object { @($_.items).Count -gt 0 })
-        if ($groups.Count -eq 0) { return }
-        $layout = New-Layout $groups $script:Screen $script:Grid
-        $dot = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(120, 200, 210, 230))
-        foreach ($b in $layout.blocks) {
-            $c = Convert-HexColor $b.color
-            $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(170, $c.R, $c.G, $c.B), 1)
-            $gfx.DrawRectangle($pen, [int]($b.x * $scale), [int]($b.y * $scale), [int]($b.w * $scale), [int]($b.h * $scale))
-            $pen.Dispose()
-            foreach ($it in $b.items) {
-                $gfx.FillRectangle($dot, [single]($it.x * $scale), [single]($it.y * $scale), 6, 6)
+        # исключение из обработчика Paint уходит в WinForms и ломает окно,
+        # поэтому предпросмотр рисуем «мягко»: не вышло — просто пусто
+        try {
+            $gfx = $e.Graphics
+            $gfx.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+            $scaleX = $s.Width / [double]$script:Screen.width
+            $scaleY = $s.Height / [double]$script:Screen.height
+            $scale = [Math]::Min($scaleX, $scaleY)
+            $groups = @($script:Groups | Where-Object { @($_.items).Count -gt 0 })
+            if ($groups.Count -eq 0) { return }
+            $layout = New-Layout $groups $script:Screen $script:Grid
+            $dot = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(120, 200, 210, 230))
+            foreach ($b in $layout.blocks) {
+                $c = Convert-HexColor $b.color
+                $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(170, $c.R, $c.G, $c.B), 1)
+                $gfx.DrawRectangle($pen, [int]($b.x * $scale), [int]($b.y * $scale), [int]($b.w * $scale), [int]($b.h * $scale))
+                $pen.Dispose()
+                foreach ($it in $b.items) {
+                    $gfx.FillRectangle($dot, [single]($it.x * $scale), [single]($it.y * $scale), 6, 6)
+                }
+                $f = New-Object System.Drawing.Font('Segoe UI', 6.5)
+                $br = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(235, $c.R, $c.G, $c.B))
+                $gfx.DrawString($b.name, $f, $br, [single]($b.x * $scale), [single]($b.y * $scale - 11))
+                $br.Dispose()
+                $f.Dispose()
             }
-            $f = New-Object System.Drawing.Font('Segoe UI', 6.5)
-            $br = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(235, $c.R, $c.G, $c.B))
-            $gfx.DrawString($b.name, $f, $br, [single]($b.x * $scale), [single]($b.y * $scale - 11))
-            $br.Dispose()
-            $f.Dispose()
+            $dot.Dispose()
         }
-        $dot.Dispose()
+        catch {
+            Write-Verbose 'предпросмотр не отрисован: ' + $_.Exception.Message
+        }
     })
 
 # ---------------------------------------------------------------- действия
@@ -342,13 +408,30 @@ $lstGroups.Add_SelectedIndexChanged({ Update-ItemList })
 
 $btnScan.Add_Click({
         $status.Text = 'Сканирую рабочий стол…'
-        $script:Items = Get-DesktopItems
-        $script:Groups.Clear()
-        $script:Items | Out-Null
+        $script:Items = Get-DesktopItems -AlignWithView
+
+        # группы не сбрасываем: только убираем исчезнувшие значки
+        # и складываем новые в «Прочее» — иначе скан уничтожает работу
+        $known = @{}
+        foreach ($it in $script:Items) { $known[$it.name] = $true }
+        foreach ($g in $script:Groups) {
+            $g.items = @(@($g.items) | Where-Object { $known.ContainsKey($_) })
+        }
+        $null = Resolve-GroupItems $script:Groups $script:Items
+
+        $unassigned = @(Get-UnassignedItems)
+        if ($unassigned.Count -gt 0) {
+            $target = Get-OrCreateGroup 'Прочее' '#8C8C8C'
+            foreach ($u in $unassigned) {
+                if (@($target.items) -notcontains $u) { $target.items = @($target.items) + $u }
+            }
+        }
+
+        Save-Config
         Update-GroupList
         Update-ItemList
         Update-Preview
-        $status.Text = 'Найдено значков: ' + $script:Items.Count + '. Нажмите «Предложить группы» или создайте свои.'
+        $status.Text = 'Найдено значков: ' + $script:Items.Count + '. Группы сохранены, новые — в «Прочее».'
     })
 
 $btnPropose.Add_Click({
@@ -541,7 +624,9 @@ $btnApply.Add_Click({
             }
             $res = Invoke-DesktopLayout $layout $script:BackupDir
             $png = Join-Path $script:AppDir 'wallpaper.png'
-            $null = Save-Wallpaper $layout $png
+            # обои рисуем ровно в размере экрана: иначе на другом разрешении
+            # Windows растянет картинку и рамки разъедутся со значками
+            $null = Save-Wallpaper $layout $png $script:Screen.width $script:Screen.height
             $ok = Set-DesktopWallpaper $png
 
             $msg = 'Расставлено: {0}, проходов: {1}' -f $res.placed, $res.passes
@@ -575,15 +660,51 @@ $btnSaveWall.Add_Click({
         $dlg.FileName = 'desktop-groups.png'
         if ($dlg.ShowDialog() -eq 'OK') {
             $layout = New-Layout $groups $script:Screen $script:Grid
-            $null = Save-Wallpaper $layout $dlg.FileName
+            $null = Save-Wallpaper $layout $dlg.FileName $script:Screen.width $script:Screen.height
             $status.Text = 'Обои сохранены: ' + $dlg.FileName
+        }
+    })
+
+$btnRestore.Add_Click({
+        $files = @(Get-ChildItem -LiteralPath $script:BackupDir -Filter 'before-apply-*.json' -ErrorAction SilentlyContinue |
+                Sort-Object LastWriteTime -Descending)
+        if ($files.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show('Бэкапов ещё нет: они создаются при каждом применении раскладки.', 'Восстановить', 'OK', 'Information')
+            return
+        }
+        $file = $files[0]
+        $plan = @{}
+        try {
+            $data = [IO.File]::ReadAllText($file.FullName, [Text.UTF8Encoding]::new($true)) | ConvertFrom-Json
+            $data.PSObject.Properties | ForEach-Object {
+                $v = $_.Value
+                $n = [string]$v.name
+                if (-not $n) { $n = [string]$_.Name }   # старый формат бэкапа: ключ = имя
+                $plan[$n] = @{ x = [int]$v.x; y = [int]$v.y }
+            }
+        }
+        catch {
+            [System.Windows.Forms.MessageBox]::Show('Не удалось прочитать бэкап: ' + $_.Exception.Message, 'Восстановить', 'OK', 'Error')
+            return
+        }
+        $layout = [pscustomobject]@{ plan = $plan; grid = $script:Grid; blocks = @(); overflow = $false }
+        $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+        try {
+            $res = Invoke-DesktopLayout $layout $script:BackupDir
+            $status.Text = 'Возвращены позиции из {0}: значков {1}, расхождений {2}' -f $file.Name, $res.placed, $res.mismatches.Count
+        }
+        catch {
+            $status.Text = 'Ошибка восстановления: ' + $_.Exception.Message
+        }
+        finally {
+            $form.Cursor = [System.Windows.Forms.Cursors]::Default
         }
     })
 
 # ---------------------------------------------------------------- старт
 
 $form.Add_Shown({
-        $script:Items = Get-DesktopItems
+        $script:Items = Get-DesktopItems -AlignWithView
         $view = $null
         try {
             $view = Get-DesktopView
@@ -599,13 +720,25 @@ $form.Add_Shown({
         if (-not (Import-Config)) {
             $proposed = New-ProposedGroups $script:Items
             foreach ($g in $proposed) { [void]$script:Groups.Add($g) }
-            Save-Config
+            if ($script:ConfigBroken) {
+                # не перезаписываем молча: старый файл уже отложен, новый запишет пользователь
+                [System.Windows.Forms.MessageBox]::Show(
+                    'Файл настроек повреждён и сохранён как:' + "`r`n" + $script:ConfigBroken + "`r`n`r`n" +
+                    'Группы предложены заново. Проверьте их и нажмите «Применить» — тогда новый конфиг будет записан.',
+                    'Настройки', 'OK', 'Warning')
+            }
+            else {
+                Save-Config
+            }
         }
         Update-GroupList
         Update-ItemList
         Update-Preview
         $status.Text = 'Значков: {0}. Сетка {1}×{2}. Версия {3}. Конфиг: {4}' -f $script:Items.Count, $script:Grid.stepX, $script:Grid.stepY, $script:Version, $script:ConfigPath
         if ($script:GridNote) { $status.Text = $script:GridNote + ' | ' + $status.Text }
+        if ($script:UnresolvedItems -and @($script:UnresolvedItems).Count -gt 0) {
+            $status.Text += ' | не найдено на столе: ' + (@($script:UnresolvedItems) -join ', ')
+        }
     })
 
 $form.Add_FormClosing({
@@ -613,4 +746,15 @@ $form.Add_FormClosing({
         catch { Write-Warning ('конфиг не сохранён: ' + $_.Exception.Message) }
     })
 
-[void]$form.ShowDialog()
+# ошибки старта при скрытой консоли иначе не увидеть — пишем лог и показываем окно
+try {
+    [void]$form.ShowDialog()
+}
+catch {
+    $log = Join-Path $script:AppDir 'startup-error.log'
+    try { [IO.File]::WriteAllText($log, $_.Exception.ToString(), [Text.UTF8Encoding]::new($true)) }
+    catch { Write-Verbose 'лог старта записать не удалось' }
+    [System.Windows.Forms.MessageBox]::Show(
+        'Программа не смогла запуститься: ' + $_.Exception.Message + "`r`n`r`nПодробности: " + $log,
+        'DesktopGroups', 'OK', 'Error')
+}

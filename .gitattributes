@@ -10,3 +10,12 @@
 *.png binary
 *.zip binary
 *.ico binary
+
+# в архив git archive не попадает служебное и внутреннее
+.github export-ignore
+docs/review export-ignore
+tests export-ignore
+dist export-ignore
+.gitignore export-ignore
+.gitattributes export-ignore
+PSScriptAnalyzerSettings.psd1 export-ignore

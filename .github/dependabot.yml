@@ -1,0 +1,8 @@
+version: 2
+updates:
+  # действия в CI закреплены по мажорной версии — обновления приходят PR-ом
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5

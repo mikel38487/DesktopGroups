@@ -1,6 +1,6 @@
 @echo off
-rem Удаление DesktopGroups: ярлыки, запись в списке приложений, папка программы.
-rem Обои рабочего стола не восстанавливаются — их можно вернуть в параметрах Windows.
+rem Удаление DesktopGroups: ярлыки, запись в списке приложений, каталог программы.
+rem Обои рабочего стола восстанавливаются из previous-wallpaper.json.
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\uninstall.ps1"
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\uninstall.ps1"
 pause

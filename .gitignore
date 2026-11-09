@@ -1,8 +1,12 @@
 # пользовательские данные и артефакты запуска
 config.json
+config.bad-*.json
+config.json.tmp
 wallpaper.png
+startup-error.log
 backups/
 build/
+dist/
 *.log
 
 # временное

@@ -36,8 +36,10 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_INPUT: ${{ inputs.tag }}
         run: |
-          $tag = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { '${{ inputs.tag }}' }
+          $tag = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { $env:TAG_INPUT }
+          if (-not $tag) { throw "не задан тег релиза" }
           $zip = Get-ChildItem dist\*.zip | Select-Object -First 1
           if (-not $zip) { throw "архив не собран" }
           gh release create $tag $zip.FullName --title $tag --generate-notes

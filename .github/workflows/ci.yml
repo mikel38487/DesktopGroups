@@ -13,27 +13,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Проверка синтаксиса (PowerShell 5.1 и 7)
+      # Кодировка и разбор под тем хостом, которым программа реально
+      # запускается: Windows PowerShell 5.1.
+      - name: Кодировка и разбор (PowerShell 5.1)
         shell: pwsh
         run: |
-          $files = Get-ChildItem -Recurse -Include *.ps1
-          $failed = 0
-          foreach ($f in $files) {
-            $tokens = $null; $errors = $null
-            [void][System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$tokens, [ref]$errors)
-            foreach ($e in $errors) {
-              Write-Host "::error file=$($f.FullName),line=$($e.Extent.StartLineNumber)::$($e.Message)"
-              $failed++
-            }
-          }
-          if ($failed -gt 0) { throw "Синтаксических ошибок: $failed" }
-          Write-Host "Синтаксис в порядке: $($files.Count) файлов"
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\check-encoding.ps1
+          if ($LASTEXITCODE -ne 0) { throw "проверка кодировки/разбора провалена" }
+
+      - name: Кодировка и разбор (PowerShell 7)
+        shell: pwsh
+        run: |
+          .\tests\check-encoding.ps1
+          if ($LASTEXITCODE -ne 0) { throw "проверка кодировки/разбора провалена" }
 
       - name: Установка PSScriptAnalyzer
         shell: pwsh
-        run: |
-          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force -AllowClobber
+        run: Install-Module PSScriptAnalyzer -Scope CurrentUser -Force -AllowClobber -RequiredVersion 1.25.0
 
       - name: Статический анализ
         shell: pwsh
@@ -53,6 +49,12 @@ jobs:
         run: |
           powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\smoke.ps1
           if ($LASTEXITCODE -ne 0) { throw "Smoke-тесты провалены" }
+
+      - name: Фаззинг config.json
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\fuzz-config.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Фаззинг провален" }
 
       - name: Сборка релизного архива
         shell: pwsh

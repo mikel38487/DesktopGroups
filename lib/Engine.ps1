@@ -10,6 +10,17 @@ catch { Write-Verbose 'System.Drawing недоступен — обои сген
 try { Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop }
 catch { Write-Verbose 'System.Windows.Forms недоступен — размеры экрана будут по умолчанию' }
 
+# Структура LVITEM зависит от разрядности процесса. 32-битный PowerShell
+# записал бы в 64-битный explorer 60 байт вместо 88 — рабочий стол упал бы.
+if (-not [Environment]::Is64BitProcess -and [Environment]::Is64BitOperatingSystem) {
+    throw 'DesktopGroups требует 64-битный PowerShell: под 32-битным хостом структура LVITEM не совпадает с explorer.exe.'
+}
+
+# Объявляем DPI-awareness до создания окон: иначе на масштабировании 125/150%
+# экранные метрики виртуальные, а координаты ListView — физические.
+try { [void][DesktopIconsNative]::EnableDpiAwareness() }
+catch { Write-Verbose 'DPI-awareness не включился: на масштабировании возможен сдвиг' }
+
 $script:Palette = @(
     '#8B98AB', '#E0A33E', '#D96A8A', '#4FA3E3', '#62C08A',
     '#9A7FE0', '#E07A5F', '#B7B26A', '#8C8C8C', '#5FB7B0', '#C08FC0'
@@ -17,9 +28,9 @@ $script:Palette = @(
 
 $script:GroupRules = @(
     @{ name = 'Установщики'; color = '#B7B26A'; words = @() }
-    @{ name = 'Сеть и VPN'; color = '#9A7FE0'; words = @('vpn', 'proxy', 'zapret', 'vnc', 'rudesktop', 'remote', 'wireshark', 'putty', 'anydesk', 'rustdesk', 'radmin', 'wireguard') }
+    @{ name = 'Сеть и VPN'; color = '#9A7FE0'; words = @('vpn', 'proxy', 'zapret', 'vnc', 'ultravnc', 'tgwsproxy', 'amneziavpn', 'rudesktop', 'remote', 'wireshark', 'putty', 'anydesk', 'rustdesk', 'radmin', 'wireguard') }
     @{ name = 'Игры'; color = '#E0A33E'; words = @('steam', 'epic games', 'faceit', 'deadlock', 'counter-strike', 'tlauncher', 'exitlag', 'happ', 'skydimo', 'riot', 'battle.net', 'ubisoft', 'gog') }
-    @{ name = 'Разработка и AI'; color = '#62C08A'; words = @('code', 'cursor', 'docker', 'harness', 'kimi', 'qwen', 'mobaxterm', 'obsidian', 'xsd', 'git', 'python', 'node', 'studio', 'terminal', 'powershell', 'postman', 'dbeaver', 'notepad', 'wsl') }
+    @{ name = 'Разработка и AI'; color = '#62C08A'; words = @('code', 'cursor', 'docker', 'harness', 'kimi', 'qwen', 'mobaxterm', 'obsidian', 'xsd', 'xsddiagram', 'git', 'python', 'node', 'studio', 'terminal', 'powershell', 'postman', 'dbeaver', 'notepad', 'wsl') }
     @{ name = 'Связь и интернет'; color = '#4FA3E3'; words = @('telegram', 'discord', 'teamspeak', 'whatsapp', 'viber', 'skype', 'slack', 'zoom', 'teams', 'chrome', 'firefox', 'browser', 'opera') }
     @{ name = 'Медиа'; color = '#D96A8A'; words = @('vlc', 'spotify', 'itunes', 'media', 'player', 'foobar', 'audacity') }
     @{ name = 'Оборудование'; color = '#E07A5F'; words = @('cpuid', 'nvidia', 'redragon', 'panteon', 'epson', 'logitech', 'razer', 'hyperx', 'asus', 'msi', 'corsair', 'headset', 'mouse', 'телевизор') }
@@ -28,7 +39,40 @@ $script:GroupRules = @(
 
 # ---------------------------------------------------------------- сканирование
 
+# Имена в оболочке — источник истины: при включённом «скрывать расширения»
+# Explorer показывает "app", а не "app.exe". План должен совпадать с ним,
+# иначе значок не найдёт свою ячейку и уедет в резервную колонку.
+function Sync-ItemNames {
+    param($Items)
+
+    $view = $null
+    try { $view = Get-DesktopView }
+    catch { return , $Items }
+
+    try { $viewNames = @(Read-ViewItems $view | ForEach-Object { $_.name }) }
+    finally { Close-DesktopView $view }
+
+    $byName = @{}
+    $byBase = @{}
+    foreach ($n in $viewNames) {
+        $byName[$n.ToLower()] = $n
+        $b = [IO.Path]::GetFileNameWithoutExtension($n).ToLower()
+        if (-not $byBase.ContainsKey($b)) { $byBase[$b] = $n }
+    }
+
+    foreach ($it in $Items) {
+        if ($byName.ContainsKey($it.name.ToLower())) { continue }
+        $b = $it.base.ToLower()
+        if ($byBase.ContainsKey($b)) { $it.name = $byBase[$b] }
+    }
+
+    # системные элементы (Корзина и т.п.) оставляем только если они реально в виде
+    $Items = @($Items | Where-Object { $_.kind -ne 'system' -or $byName.ContainsKey($_.name.ToLower()) })
+    return , $Items
+}
+
 function Get-DesktopItems {
+    param([switch]$AlignWithView)
     $paths = @([Environment]::GetFolderPath('Desktop'), (Join-Path $env:PUBLIC 'Desktop'))
     $seen = @{}
     $items = @()
@@ -61,10 +105,13 @@ function Get-DesktopItems {
         }
     }
 
-    # Корзина есть в виде рабочего стола, но не на диске
+    # Корзина живёт в оболочке, а не на диске: добавляем кандидата,
+    # Sync-ItemNames уберёт его, если такого элемента в виде нет
     if (-not $seen.ContainsKey('корзина')) {
         $items += [pscustomobject]@{ name = 'Корзина'; base = 'Корзина'; ext = ''; path = ''; kind = 'system' }
     }
+
+    if ($AlignWithView) { $items = Sync-ItemNames -Items $items }
 
     return @($items | Sort-Object name)
 }
@@ -93,7 +140,10 @@ function New-ProposedGroups {
             }
             else {
                 foreach ($w in $rule.words) {
-                    if ($low.Contains($w)) { $hit = $true; break }
+                    # совпадение по целому слову: иначе «Codecs» попадает в
+                    # разработку из-за «code», а «Immediate» — в медиа из-за «media»
+                    $pattern = '(?i)(?<![a-zа-яё0-9])' + [regex]::Escape($w) + '(?![a-zа-яё0-9])'
+                    if ($low -match $pattern) { $hit = $true; break }
                 }
             }
 
@@ -130,6 +180,7 @@ function Get-NextColor {
 function Resolve-GroupItems {
     param($Groups, $Items)
 
+    $script:UnresolvedItems = @()
     $byName = @{}
     $byBase = @{}
     foreach ($it in $Items) {
@@ -143,6 +194,7 @@ function Resolve-GroupItems {
             $k = ([string]$i).ToLower()
             if ($byName.ContainsKey($k)) { $resolved += $byName[$k] }
             elseif ($byBase.ContainsKey($k)) { $resolved += $byBase[$k] }
+            else { $script:UnresolvedItems += [string]$i }   # имени больше нет на столе
         }
         $g.items = $resolved
     }
@@ -243,6 +295,7 @@ function New-Layout {
         plan     = $plan
         overflow = $overflow
         grid     = $Grid
+        screen   = $Screen
     }
 }
 
@@ -263,6 +316,11 @@ function Get-ScreenInfo {
 
 function Convert-HexColor {
     param([string]$Hex)
+    # цвет приходит из config.json, который можно править руками: мусор не должен
+    # ронять отрисовку, поэтому подставляем серый вместо исключения
+    if ($Hex -notmatch '^#?[0-9A-Fa-f]{6}$') {
+        return [System.Drawing.Color]::FromArgb(255, 140, 140, 140)
+    }
     $h = $Hex.TrimStart('#')
     return [System.Drawing.Color]::FromArgb(
         255,
@@ -326,7 +384,13 @@ function Save-Wallpaper {
             $font = New-Object System.Drawing.Font('Segoe UI', [single]$size, [System.Drawing.FontStyle]::Bold)
         }
         $tb = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(240, $c.R, $c.G, $c.B))
-        $g.DrawString($b.name, $font, $tb, [single]($x0 + 4), [single]($y0 - 26))
+        # длинное название не должно вылезать за рамку и наезжать на соседей
+        $fmt = New-Object System.Drawing.StringFormat
+        $fmt.Trimming = [System.Drawing.StringTrimming]::EllipsisCharacter
+        $fmt.FormatFlags = [System.Drawing.StringFormatFlags]::NoWrap
+        $textRect = New-Object System.Drawing.RectangleF([single]($x0 + 4), [single]($y0 - 30), [single]($bw - 10), [single]20)
+        $g.DrawString($b.name, $font, $tb, $textRect, $fmt)
+        $fmt.Dispose()
         $tb.Dispose()
         $font.Dispose()
 
@@ -364,8 +428,15 @@ function Get-DesktopView {
     $proc = [DesktopIconsNative]::OpenProcess(0x438, $false, $procId)
     if ($proc -eq [IntPtr]::Zero) { throw 'Не удалось открыть процесс explorer.exe' }
 
-    $remote = [DesktopIconsNative]::VirtualAllocEx($proc, [IntPtr]::Zero, [UIntPtr]::new(4096), 0x3000, 0x04)
-    if ($remote -eq [IntPtr]::Zero) { throw 'Не удалось выделить память в explorer.exe' }
+    try {
+        $remote = [DesktopIconsNative]::VirtualAllocEx($proc, [IntPtr]::Zero, [UIntPtr]::new(4096), 0x3000, 0x04)
+        if ($remote -eq [IntPtr]::Zero) { throw 'Не удалось выделить память в explorer.exe' }
+    }
+    catch {
+        # без этого хендл процесса утёк бы при неудачном выделении памяти
+        [void][DesktopIconsNative]::CloseHandle($proc)
+        throw
+    }
 
     return [pscustomobject]@{ lv = $lv; proc = $proc; remote = $remote }
 }
@@ -467,8 +538,17 @@ function Test-AutoArrange {
     return [bool](([uint32]$p.FFlags) -band 0x1)
 }
 
-function Get-ViewGridStep {    param($View)
-    $r = [DesktopIconsNative]::SendMessage($View.lv, [DesktopIconsNative]::LVM_GETITEMSPACING, [IntPtr]::Zero, [IntPtr]::Zero)
+function Get-ViewGridStep {
+    param($View)
+
+    # Шаг зависит от режима отображения: у мелких значков он другой.
+    # LVS_TYPEMASK = 0x3, LVS_SMALLICON = 0x2.
+    $style = [DesktopIconsNative]::GetWindowLong($View.lv, -16)
+    $smallIcons = (($style -band 0x3) -eq 0x2)
+    $wParam = [IntPtr]::Zero
+    if ($smallIcons) { $wParam = [IntPtr]1 }
+
+    $r = [DesktopIconsNative]::SendMessage($View.lv, [DesktopIconsNative]::LVM_GETITEMSPACING, $wParam, [IntPtr]::Zero)
     $v = $r.ToInt64()
     $cx = [int]($v -band 0xFFFF)
     $cy = [int](($v -shr 16) -band 0xFFFF)
@@ -489,23 +569,67 @@ function Invoke-DesktopLayout {
             if (-not (Test-Path -LiteralPath $BackupDir)) { New-Item -ItemType Directory -Path $BackupDir -Force | Out-Null }
             $file = Join-Path $BackupDir ('before-apply-{0}.json' -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
             $obj = @{}
-            foreach ($it in $before) { $obj[$it.name] = @{ x = $it.x; y = $it.y } }
+            # ключ включает индекс: одноимённые ярлык и папка иначе схлопнутся
+            foreach ($it in $before) { $obj["$($it.index)|$($it.name)"] = @{ name = $it.name; x = $it.x; y = $it.y } }
             $obj | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $file -Encoding UTF8
+
+            # держим не больше 20 бэкапов, иначе папка растёт бесконечно
+            $old = Get-ChildItem -LiteralPath $BackupDir -Filter 'before-apply-*.json' |
+                Sort-Object LastWriteTime -Descending |
+                Select-Object -Skip 20
+            foreach ($f in $old) { Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue }
         }
 
-        $targets = @{}
-        foreach ($k in $Layout.plan.Keys) { $targets[$k] = $Layout.plan[$k] }
-
         $grid = $Layout.grid
-        $fallbackX = $grid.margin + 23 * $grid.stepX
+        $screen = $Layout.screen
+        if ($null -eq $screen) { $screen = Get-ScreenInfo }
+
+        $maxCols = [int][math]::Floor(($screen.width - 2 * $grid.margin) / $grid.stepX)
+        $maxRows = [int][math]::Floor(($screen.workHeight - $grid.top - $grid.margin) / $grid.stepY)
+        if ($maxCols -lt 1) { $maxCols = 1 }
+        if ($maxRows -lt 1) { $maxRows = 1 }
+
+        # цели привязаны к индексу значка, а не к имени: одноимённые ярлык и папка
+        # получают разные ячейки, а не одну на двоих
+        $used = @{}
+        $targets = @{}
         $unknown = @()
-        $row = 0
+        $fallbackIndex = 0
+        $limit = $maxCols * $maxRows
+
         foreach ($it in $before) {
-            if (-not $targets.ContainsKey($it.name)) {
-                $targets[$it.name] = @{ x = $fallbackX; y = $grid.top + $grid.stepY * $row }
-                $unknown += $it.name
-                $row++
+            $t = $null
+            if ($Layout.plan.ContainsKey($it.name)) {
+                $cand = $Layout.plan[$it.name]
+                $key = "$($cand.x),$($cand.y)"
+                if (-not $used.ContainsKey($key)) {
+                    $t = $cand
+                    $used[$key] = $true
+                }
             }
+
+            if ($null -eq $t) {
+                # свободное место: колонки справа налево, сверху вниз, в пределах экрана
+                $x = $grid.margin
+                $y = $grid.top
+                $guard = 0
+                do {
+                    $c = [int][math]::Floor($fallbackIndex / $maxRows)
+                    $r = $fallbackIndex % $maxRows
+                    $fallbackIndex++
+                    $guard++
+                    $x = $grid.margin + ($maxCols - 1 - $c) * $grid.stepX
+                    if ($x -lt $grid.margin) { $x = $grid.margin }
+                    $y = $grid.top + $r * $grid.stepY
+                    $key = "$x,$y"
+                } while ($used.ContainsKey($key) -and $guard -lt ($limit * 2))
+
+                $t = @{ x = $x; y = $y }
+                $used[$key] = $true
+                $unknown += $it.name
+            }
+
+            $targets[$it.index] = $t
         }
 
         # проходы до сходимости: попадание в занятую ячейку сдвигает соседа
@@ -514,8 +638,8 @@ function Invoke-DesktopLayout {
             $moved = 0
             $cur = Read-ViewItems $view
             foreach ($it in $cur) {
-                if (-not $targets.ContainsKey($it.name)) { continue }
-                $t = $targets[$it.name]
+                if (-not $targets.ContainsKey($it.index)) { continue }
+                $t = $targets[$it.index]
                 if ($it.x -ne $t.x -or $it.y -ne $t.y) {
                     Set-ViewPosition $view $it.index $t.x $t.y
                     $moved++
@@ -530,18 +654,18 @@ function Invoke-DesktopLayout {
         $final = Read-ViewItems $view
         $bad = @()
         foreach ($it in $final) {
-            if (-not $targets.ContainsKey($it.name)) { continue }
-            $t = $targets[$it.name]
+            if (-not $targets.ContainsKey($it.index)) { continue }
+            $t = $targets[$it.index]
             if ($it.x -ne $t.x -or $it.y -ne $t.y) {
                 $bad += [pscustomobject]@{ name = $it.name; expected = "$($t.x),$($t.y)"; actual = "$($it.x),$($it.y)" }
             }
         }
 
         return [pscustomobject]@{
-            placed     = @($targets.Keys).Count
+            placed     = $targets.Count
             passes     = $passes
             mismatches = $bad
-            unknown    = $unknown
+            unknown    = @($unknown | Select-Object -Unique)
         }
     }
     finally {

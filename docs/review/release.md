@@ -1,10 +1,12 @@
 # DesktopGroups — ревью готовности к публикации
 
-- **Объект:** коммит `64125fe` (ветка `main`), 11 файлов, 66 КБ.
+- **Объект:** коммит `64125fe` (ветка `main`), 11 файлов, 66 КБ. На момент финализации HEAD уже `1f48b23` — см. §6.
 - **Среда проверки:** Windows 11, Windows PowerShell 5.1.26100, PowerShell 7.6.9, PSScriptAnalyzer 1.25.0.
 - **Метод:** `git` (status/log/tag/ls-tree), парсер PowerShell, PSScriptAnalyzer, пробный запуск GUI с закрытием окна (раскладка **не** применялась), проверка ACL и арифметики раскладки.
 
 > **Границы ревью.** Проверялся коммит `64125fe`. Во время проверки рабочее дерево менялось параллельно (появились `install.cmd`, `uninstall.cmd`, `VERSION`, `.github/`, `dist/` и правки `lib/Engine.ps1`/`README.md`). Всё ниже, если не сказано иное, относится к коммиту; дельта — в §6. Релиз нельзя тегировать из грязного дерева.
+>
+> **Снимок:** 2026-11-09, ~19:50 MSK. После этого в рабочем дереве продолжались правки (workflows, launchers, `tests/check-encoding.ps1`); они не проверялись и в отчёт не вошли — перед тегом сверяйтесь с `git status`.
 
 ## 1. Что мешает публикации
 
@@ -57,7 +59,7 @@
 **B6. Рабочее дерево грязное относительно коммита — тегировать нельзя.**
 
 - На момент отчёта: `M README.md`, `M lib/Engine.ps1`; untracked `install.cmd`, `uninstall.cmd`, `VERSION`, `CHANGELOG.md`, `SECURITY.md`, `.gitattributes`, `.github/`, `dist/`, `docs/`, `tools/`, `tests/smoke.ps1`, `PSScriptAnalyzerSettings.psd1`.
-- Это не входит в `64125fe`; релиз из такого дерева либо потеряет правки, либо попадёт в тег непроверенным.
+- Это не входит в `64125fe`; релиз из такого дерева либо потеряет правки, либо попадёт в тег непроверенным. Позже эти файлы вошли в `1f48b23` (см. §6), но в коммит попал и `dist/*.zip`.
 
 **Действие:** закоммитить и проверить, затем тег с чистого дерева (`git status --short` пусто).
 
@@ -185,9 +187,9 @@ Start-Process (Join-Path $dst 'DesktopGroups.cmd')
 
 ## 3. Чек-лист релиза
 
-1. **Заморозить код.** Закрыть B3 (масштаб обоев), M1 (битый конфиг), M2 (ширина); проверить `maxCols/maxRows` из рабочего дерева.
-2. **Убрать артефакты:** `config.json`, `wallpaper.png`, `backups/`, `build/`, `dist/`; добавить `dist/` в `.gitignore`.
-3. **Добавить файлы:** `install.cmd`, `uninstall.cmd`, `tools/install.ps1`, `tools/uninstall.ps1`, `VERSION`, `CHANGELOG.md`, `SECURITY.md`, `CONTRIBUTING.md`, `.gitattributes`, `.github/workflows/ci.yml`, шаблон issue, скриншоты.
+1. **Заморозить код.** По `1f48b23` осталось: B3 (масштаб обоев), M1 (битый конфиг), M5 (обои при удалении); M2 уже закрыт — прогнать smoke.
+2. **Убрать артефакты:** `git rm --cached dist/DesktopGroups-1.0.0.zip`, добавить `dist/` в `.gitignore`, удалить `config.json`, `wallpaper.png`, `backups/`, `build/`.
+3. **Проверить файлы (в `1f48b23` уже есть):** `install.cmd`, `uninstall.cmd`, `tools/install.ps1`, `tools/uninstall.ps1`, `VERSION`, `CHANGELOG.md`, `SECURITY.md`, `.gitattributes`, `.github/workflows/ci.yml`; добавить `CONTRIBUTING.md`, шаблон issue, скриншоты.
 4. **Версия:** `VERSION` = `0.1.0` (или `1.0.0`), та же строка в окне/«О программе», `CHANGELOG` с датой, тег `v0.1.0`.
 5. **Локальные проверки:**
 
@@ -270,14 +272,14 @@ dist export-ignore
 - **Описание репозитория.** Локально `git remote -v` пуст, поэтому описание/топики/социальный preview проверить нельзя — их ещё нет. Рекомендация: описание «Bake desktop shortcut groups into your wallpaper — no background process, no Explorer hooks.»; topics: `windows`, `powershell`, `winforms`, `desktop`, `wallpaper`, `shortcuts`, `icon-layout`, `fences-alternative`.
 - **Лицензия.** MIT, `LICENSE:3` — `Copyright (c) 2026 mikel38487`; совпадает с git-email `mikel38487@users.noreply.github.com`. GitHub определит лицензию как MIT.
 - **Секреты.** По типовым шаблонам (`ghp_`, `github_pat_`, `api_key`, `secret`, `password`, `token`, `Bearer`) — 0 совпадений в tracked-файлах. Ключей, токенов и `.env` нет.
-- **Размер.** 66 КБ, 11 файлов, бинарников в git нет — для GitHub отлично; `.git` тоже маленький (15 объектов).
+- **Размер.** В `64125fe` — 66 КБ, 11 файлов, бинарников нет; `.git` маленький. В `1f48b23` уже 28 файлов и бинарный ZIP 24 КБ — это перебор, артефакту в git не место.
 - **`.gitattributes` / переносы строк.** Файла нет; `core.autocrlf=true` (проверено), git предупреждает «LF will be replaced by CRLF». В блобах LF, включая `.cmd`; `.cmd` с LF в тесте запустился, но для предсказуемости и ZIP нужен `.gitattributes` (§3).
 - **Скриншоты.** В коммите нет ни одного изображения; первый экран README — только текст. Для «первого впечатления» нужен скриншот окна и пример обоев (без личных имён).
 - **История.** Один коммит, сообщение по-русски, ветка `main`, тегов нет — история для релиза ещё не оформлена.
 
 ## 5. Оценка
 
-**Не готово** (по коммиту `64125fe`).
+**Не готово** по коммиту `64125fe`; по `1f48b23` — **почти готово**, а в рабочем дереве уже исправляются B2/B3/M1/M5/M6/M7 (не проверены запуском). Итог — см. §6.
 
 Почему: пользователь, скачавший ZIP завтра, получает папку без установщика и без ответа «куда класть»; если кладёт в `Program Files` — программа не сохраняет конфиг/обои; команда из README на политике `Restricted` не запускается; на экране, отличном от 1920×1080, рамки не совпадают со значками; версии/тега/Release нет; тесты не проверяются в CI и опасны. Это не косметика — это первый запуск и основной сценарий.
 
@@ -285,27 +287,44 @@ dist export-ignore
 
 Чтобы стало «готово»: закрыть B1–B5, прогнать чек-лист §3 на чистой машине. После этого — «почти готово» → «готово»; B3 (обои) и B1 (установка) обязательны.
 
-## 5. Дельта рабочего дерева (не входит в коммит)
+## 6. Коммит `1f48b23`: что изменилось после ревью
 
-На момент отчёта (после начала ревью) в дереве появились:
+Пока шло ревью, поверх `64125fe` появился коммит `1f48b23` «Инфраструктура релиза: установка без компиляции, CI, тесты, безопасность». В нём: `install.cmd`/`uninstall.cmd`/`tools/*`, `VERSION` 1.0.0, `CHANGELOG.md`, `SECURITY.md`, `.github/workflows/{ci,release}.yml`, `tests/smoke.ps1`, `tests/fuzz-config.ps1`, `.gitattributes`, правки `Engine.ps1`/`DesktopGroups.ps1`/`README.md` — **и этот отчёт, и `dist/DesktopGroups-1.0.0.zip`**. Полного прогона нового коммита не было; ниже — что проверено по файлам.
 
-| Путь | Статус | Комментарий |
+На финальной проверке (уже после `1f48b23`) в рабочем дереве снова появились незакоммиченные правки `DesktopGroups.ps1`/`lib/Engine.ps1`: `Save-Wallpaper` теперь получает `$script:Screen.width/height` (B3), битый конфиг откладывается в `config.bad-*` (M1), добавлена кнопка «Вернуть прошлую раскладку» (M6), окно подстраивается под рабочую область (M7). Также изменены `README.md` (ручная команда уже с `-ExecutionPolicy Bypass` — B2) и `tools/install.ps1`/`tools/uninstall.ps1` (сохранение и восстановление обоев — M5). Эти правки не входят в `1f48b23` и **не проверялись запуском**; перед тегом их нужно закоммитить и прогнать smoke + GUI.
+
+| Замечание | Статус в `1f48b23` | Что осталось |
 |---|---|---|
-| `lib/Engine.ps1` | M | добавлены `maxCols/maxRows` — закрывает M2; требует теста и проверки 5.1 |
-| `README.md` | M | добавлены Install/Uninstall — закрывает часть B1/B2; проверить команды и Unblock |
-| `install.cmd`, `uninstall.cmd`, `tools/` | ?? | установка/удаление; uninstall не восстанавливает обои (M5) |
-| `VERSION` (1.0.0), `CHANGELOG.md`, `SECURITY.md`, `.github/`, `.gitattributes` | ?? | релизный слой; проверить версию/тег/CI |
-| `tests/smoke.ps1`, `PSScriptAnalyzerSettings.psd1` | ?? | проверить, что smoke не трогает живой стол |
-| `dist/`, `docs/` | ?? | `dist/` — артефакт, в git не нужен; `docs/` — решить, что публиковать |
+| B1 установка/удаление | закрыто частично | install в `%LOCALAPPDATA%`, ярлык «Пуск», запись в «Приложения»; **uninstall не восстанавливает обои** (M5); install копирует `PSScriptAnalyzerSettings.psd1` в папку пользователя |
+| B2 ExecutionPolicy | не закрыто в `1f48b23` | ручная команда `powershell.exe -STA -File` (`README.md:64`, `:187`) без `Bypass`; в рабочем дереве уже `-ExecutionPolicy Bypass` (L64/L216) — проверить |
+| B3 обои 1920×1080 | **не закрыто в `1f48b23`** | GUI вызывает `Save-Wallpaper $layout $png` без размеров (`DesktopGroups.ps1:564`), сигнатура `1920×1080` (`lib/Engine.ps1:288`); в рабочем дереве уже передаётся размер экрана — проверить запуском |
+| B4 версия/релиз | закрыто частично | `VERSION` 1.0.0, `CHANGELOG.md`, `release.yml`; **тега нет** (`git tag -l` пуст), Release не создан |
+| B5 тесты/CI | закрыто частично | `smoke.ps1` headless, CI его запускает; **`tests/apply-all.ps1` и др. остаются с `F:\AI` и без guard**; `fuzz-config.ps1` в CI не запускается |
+| B6 грязное дерево | закрыто | всё закоммичено; но в коммит попали `dist/*.zip` и `docs/review/release.md` |
+| M1 битый конфиг | не закрыто в `1f48b23` | `Import-Config` проверяет `$null`, но при ошибке `Add_Shown` всё равно предлагает группы и `Save-Config` перезаписывает файл; в рабочем дереве файл уже откладывается в `config.bad-*` — проверить |
+| M2 ширина | закрыто | `maxCols/maxRows` + fallback; smoke проверяет 150 и 400 значков |
+| M3 мусор | **ухудшилось** | `dist/DesktopGroups-1.0.0.zip` (24 773 Б) tracked; `.gitignore` без `dist/` |
+| M5 обои при удалении | не закрыто в `1f48b23` | `uninstall.cmd` прямо пишет «обои не восстанавливаются»; в рабочем дереве install сохраняет `previous-wallpaper.json`, uninstall восстанавливает — проверить |
+| M6 бэкапы | не закрыто в `1f48b23` | без ротации и восстановления; в рабочем дереве добавлена кнопка «Вернуть прошлую раскладку» — проверить |
+| M7 мелочи | частично | версия в заголовке, `catch` с warning; warning в скрытой консоли не виден; в рабочем дереве окно подстраивается под экран — проверить |
 
-Эти файлы не проверялись в рамках ревью `64125fe`; перед тегом их нужно закоммитить и прогнать §3. Если они — ответ на замечания, B1/B2/M2 можно считать закрытыми после проверки; B3 (обои) в рабочем `Engine.ps1` всё ещё `1920×1080` по умолчанию.
+Новые находки по `1f48b23`:
+
+1. **ZIP в git устарел.** `dist/DesktopGroups-1.0.0.zip` (24 773 Б) содержит `PSScriptAnalyzerSettings.psd1`, но **не содержит** `CHANGELOG.md` и `SECURITY.md`, хотя `tools/build-package.ps1` их включает. Артефакт не соответствует сборщику; в git ему не место.
+2. **`build-package.ps1` кладёт в пользовательский ZIP `PSScriptAnalyzerSettings.psd1`** — dev-конфиг, не нужен.
+3. **`tools/install.ps1` копирует `PSScriptAnalyzerSettings.psd1`** в `%LOCALAPPDATA%\Programs\DesktopGroups` (`skipFiles` его не исключает).
+4. **`docs/review/release.md` опубликован в коммите** — внутренний отчёт с оценкой «не готово»; решить, публиковать ли.
+5. **`git tag -l` пуст** — `release.yml` сработает только после тега; тега нет.
+6. **`tests/smoke.ps1` по-прежнему проверяет 1920×1080** и не поймает регрессию масштаба; после фикса B3 добавить проверку 1366×768/2560×1440.
+
+Порядок действий сейчас: закоммитить и прогнать правки B2/B3/M1/M5/M6/M7 из рабочего дерева → убрать `dist/` из git и добавить в `.gitignore` → исключить `PSScriptAnalyzerSettings.psd1` из `build-package.ps1` и `install.ps1` → перенести `tests/apply-all.ps1` и др. в `tests/manual/` с guard → тег `v1.0.0` (или `v0.1.0`) и Release. После этого — «готово».
 
 ## Приложение: доказательства
 
 | Проверка | Команда/метод | Результат |
 |---|---|---|
-| Состояние git | `git status --short --branch` | `## main`, чисто на старте; HEAD `64125fe` |
-| Состав | `git ls-files` | 11 файлов, 66 КБ; артефакты не tracked |
+| Состояние git | `git status --short --branch` | на старте `## main`, чисто, HEAD `64125fe`; на финализации HEAD `1f48b23` |
+| Состав | `git ls-files` | `64125fe` — 11 файлов, 66 КБ; `1f48b23` — 28 файлов + ZIP 24 КБ |
 | Парсер | `[Parser]::ParseFile` | 0 ошибок в 6 `.ps1` |
 | PSScriptAnalyzer | `Invoke-ScriptAnalyzer` | 0 Error, 21 Warning, 7 Information |
 | Restricted | `powershell.exe -ExecutionPolicy Restricted -File ...` | exit 1, «running scripts is disabled» |
@@ -315,5 +334,9 @@ dist export-ignore
 | 1366×768 | `New-Layout` + арифметика Fill | рамка `y≈135`, значок `y=202` |
 | 2560×1440 | 4 блока по 24 | 4-й `right=2066` > 1920 |
 | Секреты | `Select-String` по tracked | 0 совпадений (типовые шаблоны) |
-| Тесты | `git grep 'F:\\AI' HEAD -- tests` | 9 вхождений |
-| Теги | `git tag -l` | пусто |
+| Тесты | `git grep 'F:\\AI' HEAD -- tests` | 9 вхождений (в `64125fe`; в `1f48b23` старые файлы не менялись) |
+| Теги | `git tag -l` | пусто и в `64125fe`, и в `1f48b23` |
+| ZIP в git | `git ls-tree -r -l HEAD dist` | `dist/DesktopGroups-1.0.0.zip`, 24 773 Б |
+| Содержимое ZIP | `ZipFile.OpenRead` | нет `CHANGELOG.md`/`SECURITY.md`, есть `PSScriptAnalyzerSettings.psd1` |
+| Ручной запуск | `README.md` | в `1f48b23` L64/:187 без `Bypass`; в рабочем дереве L64/L216 уже с `-ExecutionPolicy Bypass` |
+| Рабочее дерево на финализации | `git status --short` | `M DesktopGroups.ps1`, `M lib/Engine.ps1`, `M docs/review/release.md`, `?? docs/review/security.md` |

@@ -26,16 +26,22 @@ $include = @(
     'CHANGELOG.md'
     'SECURITY.md'
     'LICENSE'
-    'PSScriptAnalyzerSettings.psd1'
     'lib'
     'tools'
+    'docs'
 )
+
+# отчёты ревью в пакет не кладём: это внутренняя переписка, не документация для пользователя
 
 foreach ($item in $include) {
     $src = Join-Path $root $item
     if (-not (Test-Path -LiteralPath $src)) { throw "нет файла для пакета: $item" }
     Copy-Item -LiteralPath $src -Destination $stage -Recurse -Force
 }
+
+# убираем после копирования, иначе отчёты успевают попасть в архив
+$reviewDir = Join-Path $stage 'docs\review'
+if (Test-Path -LiteralPath $reviewDir) { Remove-Item -LiteralPath $reviewDir -Recurse -Force }
 
 # сборщик в пакет не нужен
 $builder = Join-Path $stage 'tools\build-package.ps1'
