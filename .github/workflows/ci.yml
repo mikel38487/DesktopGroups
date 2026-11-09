@@ -50,6 +50,12 @@ jobs:
           powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\smoke.ps1
           if ($LASTEXITCODE -ne 0) { throw "Smoke-тесты провалены" }
 
+      - name: Полнота переводов
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\i18n.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Проверка локализации провалена" }
+
       - name: Фаззинг config.json
         shell: pwsh
         run: |
