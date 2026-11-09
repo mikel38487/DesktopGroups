@@ -61,7 +61,7 @@ jobs:
         run: .\tools\build-package.ps1 -Output dist
 
       - name: Архив как артефакт
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: DesktopGroups-package
           path: dist/*.zip
