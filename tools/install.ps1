@@ -30,6 +30,8 @@ New-Item -ItemType Directory -Path $dest -Force | Out-Null
 foreach ($item in Get-ChildItem -LiteralPath $source -Force) {
     if ($item.PSIsContainer -and ($skipDirs -contains $item.Name)) { continue }
     if (-not $item.PSIsContainer -and ($skipFiles -contains $item.Name)) { continue }
+    # сам архив с программой в каталог установки не копируем
+    if (-not $item.PSIsContainer -and $item.Extension -eq '.zip') { continue }
     Copy-Item -LiteralPath $item.FullName -Destination $dest -Recurse -Force
 }
 
