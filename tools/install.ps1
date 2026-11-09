@@ -12,7 +12,7 @@ $ErrorActionPreference = 'Stop'
 $source = Split-Path -Parent $PSScriptRoot
 $dest = Join-Path $env:LOCALAPPDATA 'Programs\DesktopGroups'
 
-$skipDirs = @('.git', '.github', 'docs', 'tests', 'dist', 'backups', 'build')
+$skipDirs = @('.git', '.github', 'tests', 'dist', 'backups', 'build')
 $skipFiles = @('config.json', 'wallpaper.png', '.gitignore', '.gitattributes', 'PSScriptAnalyzerSettings.psd1')
 
 $version = '0.0.0'

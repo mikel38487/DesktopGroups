@@ -3,6 +3,8 @@
 Group desktop shortcuts into rectangles — and let the wallpaper draw the frames
 and labels for those groups.
 
+![DesktopGroups: group frames drawn on the wallpaper](docs/preview.png)
+
 ## Why another desktop organizer
 
 Existing tools (Stardock Fences, DexCorral, Gridify, DeskRipple) draw their groups
@@ -175,6 +177,8 @@ MIT — see [LICENSE](LICENSE).
 
 Программа раскладывает ярлыки рабочего стола по прямоугольным группам, а **обои
 рисуют рамки и подписи** этих групп.
+
+![DesktopGroups: рамки групп на обоях](docs/preview.png)
 
 ## Зачем ещё одна программа
 

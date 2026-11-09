@@ -388,7 +388,7 @@ function Save-Wallpaper {
         $fmt = New-Object System.Drawing.StringFormat
         $fmt.Trimming = [System.Drawing.StringTrimming]::EllipsisCharacter
         $fmt.FormatFlags = [System.Drawing.StringFormatFlags]::NoWrap
-        $textRect = New-Object System.Drawing.RectangleF([single]($x0 + 4), [single]($y0 - 30), [single]($bw - 10), [single]20)
+        $textRect = New-Object System.Drawing.RectangleF([single]($x0 + 10), [single]($y0 - 31), [single]($bw - 16), [single]20)
         $g.DrawString($b.name, $font, $tb, $textRect, $fmt)
         $fmt.Dispose()
         $tb.Dispose()
