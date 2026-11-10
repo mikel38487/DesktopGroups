@@ -1,4 +1,4 @@
-﻿# Security policy
+# Security policy
 
 Русская версия: [SECURITY.ru.md](SECURITY.ru.md)
 
@@ -67,6 +67,65 @@ git log -p | Select-String -Pattern 'ghp_|api[_-]?key|password\s*=' -CaseSensiti
 ```
 
 More on tooling: [docs/security-tooling.md](docs/security-tooling.md).
+
+## SmartScreen, code signing and why you see a warning
+
+Microsoft Defender SmartScreen looks at two signals when a file is downloaded and run:
+**publisher reputation** (is it signed, by whom) and **file hash reputation**
+(has this exact file been downloaded by many people without reports).
+
+Current behaviour, per Microsoft's own documentation
+([SmartScreen reputation](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation)):
+
+| Distribution | First download |
+|---|---|
+| Microsoft Store | no warning — Microsoft re-signs the app |
+| Signed with a valid OV/EV certificate | **still a warning** until reputation accumulates; the verified publisher name is shown |
+| Unsigned or self-signed | warning: "Windows protected your PC" |
+
+Two facts worth knowing:
+
+- **An EV certificate no longer skips SmartScreen.** That stopped being true some
+  years ago; paying extra for EV only to avoid warnings is not justified any more.
+- **Unsigned files rebuild reputation from zero on every new version.** A signing
+  certificate is the only identity that carries reputation between releases.
+
+For this project specifically: the download is a ZIP with `.ps1`, `.cmd` and `.cs`
+files — **there is no `.exe`**. SmartScreen's program-reputation flow therefore rarely
+applies. What actually interrupts the first run is different:
+
+1. the ZIP gets a *Mark of the Web*, so Windows may ask you to unblock it;
+2. PowerShell refuses to run unsigned scripts under the default `RemoteSigned`
+   policy for downloaded files;
+3. on Windows 11 with **Smart App Control** enabled, unsigned scripts can be blocked
+   outright, and only turning the feature off changes that.
+
+### What this project does about it
+
+- `install.cmd` and `DesktopGroups.cmd` pass `-ExecutionPolicy Bypass` **for that one
+  process**; the system-wide policy is never changed.
+- The README documents the **Unblock** step and the `Unblock-File` command.
+- Release assets ship with `SHA256SUMS.txt` and a **signed build provenance
+  attestation**, so a user can verify the download came from this repository:
+
+  ```powershell
+  gh attestation verify .\DesktopGroups-1.1.0.zip --repo mikel38487/DesktopGroups
+  ```
+
+### What would remove the warning
+
+| Option | Cost | Fits this project? |
+|---|---|---|
+| **SignPath Foundation** — free OV-level signing for open source | free, requires the build to be reproducible from public sources | best fit; application needed |
+| **OV code-signing certificate** (Sectigo, Certum, …) | roughly €200–400 per year, hardware token or cloud HSM | works, but reputation still starts at zero |
+| **Azure Artifact Signing** (formerly Trusted Signing) | from $9.99/month, CI-friendly | needs 3+ years of verifiable business history; not available to individuals |
+| **Microsoft Store** | free | not applicable: this is a script tool, not a packaged app |
+| **EV certificate** | most expensive | no SmartScreen benefit any more |
+
+There is **no manual submission** that grants consumer reputation; it builds
+organically from download volume. Enterprise administrators can submit a file through
+the [Microsoft Security Intelligence portal](https://www.microsoft.com/en-us/wdsi/filesubmission)
+to speed up trust in a managed fleet.
 
 ## Reporting a vulnerability
 

@@ -69,6 +69,20 @@ unpacked folder — nothing is written outside that folder except your own
 To remove it, use *Apps & features* in Windows settings, or run `uninstall.cmd`.
 Your previous wallpaper is restored on uninstall.
 
+### Verify what you downloaded
+
+Each release ships `SHA256SUMS.txt` and a signed build-provenance attestation:
+
+```powershell
+Get-FileHash .\DesktopGroups-1.1.0.zip -Algorithm SHA256   # compare with SHA256SUMS.txt
+gh attestation verify .\DesktopGroups-1.1.0.zip --repo mikel38487/DesktopGroups
+```
+
+Why Windows may still warn on first run, and which options exist to remove that,
+is written down honestly in [SECURITY.md](SECURITY.md#smartscreen-code-signing-and-why-you-see-a-warning).
+Repository guards (Dependabot, secret scanning, Scorecard, pinned actions) are
+listed in [docs/github-security.md](docs/github-security.md).
+
 ## Quick start
 
 1. **Scan desktop** — read what is on the desktop right now.

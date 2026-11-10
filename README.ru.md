@@ -69,6 +69,20 @@ DesktopGroups делает наоборот: рамки групп **впеча�
 Удаление — через «Приложения» в параметрах Windows или `uninstall.cmd`.
 Прежние обои при удалении восстанавливаются.
 
+### Проверить загруженное
+
+К каждому релизу прилагаются `SHA256SUMS.txt` и подписанная аттестация происхождения:
+
+```powershell
+Get-FileHash .\DesktopGroups-1.1.0.zip -Algorithm SHA256   # сверить с SHA256SUMS.txt
+gh attestation verify .\DesktopGroups-1.1.0.zip --repo mikel38487/DesktopGroups
+```
+
+Почему Windows может предупредить при первом запуске и какие есть варианты это
+убрать — честно расписано в [SECURITY.ru.md](SECURITY.ru.md#smartscreen-подпись-кода-и-почему-появляется-предупреждение).
+Защиты репозитория (Dependabot, secret scanning, Scorecard, пины экшенов) —
+в [docs/github-security.ru.md](docs/github-security.ru.md).
+
 ## Быстрый старт
 
 1. **Сканировать стол** — прочитать, что лежит на столе сейчас.
