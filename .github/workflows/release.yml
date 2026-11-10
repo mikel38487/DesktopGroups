@@ -7,30 +7,52 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Тег для релиза, например v1.0.0'
+        description: 'Тег для релиза, например v1.1.1'
         required: true
 
 permissions:
   contents: write
+  id-token: write          # нужно для аттестации происхождения
+  attestations: write      # запись attestation в репозиторий
 
 jobs:
   release:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: Проверки перед релизом
         shell: pwsh
         run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\check-encoding.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Проверка кодировки провалена — релиз остановлен" }
           powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\smoke.ps1
           if ($LASTEXITCODE -ne 0) { throw "Smoke-тесты провалены — релиз остановлен" }
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\i18n.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Проверка локализации провалена — релиз остановлен" }
 
       - name: Сборка архива
         shell: pwsh
         run: .\tools\build-package.ps1 -Output dist
+
+      # Подписанная аттестация: любой может проверить, что архив собран
+      # именно этим workflow из этого коммита (gh attestation verify).
+      - name: Аттестация происхождения
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: dist/*.zip
+
+      - name: Контрольная сумма SHA-256
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem dist\*.zip | Select-Object -First 1
+          if (-not $zip) { throw "архив не собран" }
+          $hash = (Get-FileHash $zip.FullName -Algorithm SHA256).Hash.ToLower()
+          "$hash  $($zip.Name)" | Out-File -FilePath dist\SHA256SUMS.txt -Encoding ascii -NoNewline:$false
+          Get-Content dist\SHA256SUMS.txt
 
       - name: Публикация релиза
         shell: pwsh
@@ -41,6 +63,6 @@ jobs:
           $tag = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { $env:TAG_INPUT }
           if (-not $tag) { throw "не задан тег релиза" }
           $zip = Get-ChildItem dist\*.zip | Select-Object -First 1
-          if (-not $zip) { throw "архив не собран" }
-          gh release create $tag $zip.FullName --title $tag --generate-notes
+          $sums = Join-Path 'dist' 'SHA256SUMS.txt'
+          gh release create $tag $zip.FullName $sums --title $tag --generate-notes
           Write-Host "релиз $tag опубликован"
