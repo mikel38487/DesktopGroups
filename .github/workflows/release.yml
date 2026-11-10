@@ -60,9 +60,16 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_INPUT: ${{ inputs.tag }}
         run: |
+          $ErrorActionPreference = 'Stop'
           $tag = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { $env:TAG_INPUT }
           if (-not $tag) { throw "не задан тег релиза" }
           $zip = Get-ChildItem dist\*.zip | Select-Object -First 1
+          if (-not $zip) { throw "архив не собран" }
           $sums = Join-Path 'dist' 'SHA256SUMS.txt'
+          if (-not (Test-Path $sums)) { throw "нет SHA256SUMS.txt" }
+
           gh release create $tag $zip.FullName $sums --title $tag --generate-notes
+          # у native-команды код возврата не влияет на $ErrorActionPreference,
+          # поэтому проверяем явно: иначе шаг «успешен» при провале gh
+          if ($LASTEXITCODE -ne 0) { throw "gh release create завершился с кодом $LASTEXITCODE" }
           Write-Host "релиз $tag опубликован"
