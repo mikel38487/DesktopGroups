@@ -13,7 +13,7 @@ catch { Write-Verbose 'System.Windows.Forms недоступен — разме�
 # Структура LVITEM зависит от разрядности процесса. 32-битный PowerShell
 # записал бы в 64-битный explorer 60 байт вместо 88 — рабочий стол упал бы.
 if (-not [Environment]::Is64BitProcess -and [Environment]::Is64BitOperatingSystem) {
-    throw 'DesktopGroups требует 64-битный PowerShell: под 32-битным хостом структура LVITEM не совпадает с explorer.exe.'
+    throw (Get-Text -Key 'err.bitness' -Values @() -Fallback 'DesktopGroups требует 64-битный PowerShell: под 32-битным хостом структура LVITEM не совпадает с explorer.exe')
 }
 
 # Объявляем DPI-awareness до создания окон: иначе на масштабировании 125/150%
@@ -37,6 +37,18 @@ $script:GroupNames = @{
     hardware   = @{ ru = 'Оборудование'; en = 'Hardware' }
     system     = @{ ru = 'Система'; en = 'System' }
     other      = @{ ru = 'Прочее'; en = 'Misc' }
+}
+
+# Тексты ошибок берём из таблицы строк, когда она подключена.
+# Движок используется и без неё (headless-тесты), поэтому есть запасной
+# вариант по-русски: сообщение всё равно должно быть понятным.
+function Get-Text {
+    param([string]$Key, [object[]]$Values, [string]$Fallback)
+
+    if (Get-Command Test-StringKey -CommandType Function -ErrorAction SilentlyContinue) {
+        if (Test-StringKey $Key) { return (T $Key $Values) }
+    }
+    return $Fallback
 }
 
 function Get-DefaultLanguage {
@@ -399,7 +411,7 @@ function Get-BackgroundImage {
 
     $info = Get-Item -LiteralPath $Path -ErrorAction Stop
     if ($info.Length -le 0) { return $null }
-    if ($info.Length -gt $MaxBytes) { throw ('файл фона слишком большой: {0} МБ' -f [math]::Round($info.Length / 1MB, 1)) }
+    if ($info.Length -gt $MaxBytes) { throw (Get-Text -Key 'err.imageTooBig' -Values @([math]::Round($info.Length / 1MB, 1)) -Fallback ('файл фона слишком большой: {0} МБ' -f [math]::Round($info.Length / 1MB, 1))) }
 
     $bytes = [IO.File]::ReadAllBytes($info.FullName)
     $ms = New-Object System.IO.MemoryStream(, $bytes)
@@ -566,16 +578,16 @@ function Set-DesktopWallpaper {
 
 function Get-DesktopView {
     $lv = [DesktopIconsNative]::FindDesktopListView()
-    if ($lv -eq [IntPtr]::Zero) { throw 'Не найден список значков рабочего стола (SysListView32)' }
+    if ($lv -eq [IntPtr]::Zero) { throw (Get-Text -Key 'err.noView' -Values @() -Fallback 'Не найден список значков рабочего стола (SysListView32)') }
 
     $procId = [uint32]0
     [void][DesktopIconsNative]::GetWindowThreadProcessId($lv, [ref]$procId)
     $proc = [DesktopIconsNative]::OpenProcess(0x438, $false, $procId)
-    if ($proc -eq [IntPtr]::Zero) { throw 'Не удалось открыть процесс explorer.exe' }
+    if ($proc -eq [IntPtr]::Zero) { throw (Get-Text -Key 'err.openProcess' -Values @() -Fallback 'Не удалось открыть процесс explorer.exe') }
 
     try {
         $remote = [DesktopIconsNative]::VirtualAllocEx($proc, [IntPtr]::Zero, [UIntPtr]::new(4096), 0x3000, 0x04)
-        if ($remote -eq [IntPtr]::Zero) { throw 'Не удалось выделить память в explorer.exe' }
+        if ($remote -eq [IntPtr]::Zero) { throw (Get-Text -Key 'err.alloc' -Values @() -Fallback 'Не удалось выделить память в explorer.exe') }
     }
     catch {
         # без этого хендл процесса утёк бы при неудачном выделении памяти
@@ -617,7 +629,7 @@ function Write-Remote {
     $written = [UIntPtr]::Zero
     $addr = [IntPtr]($View.remote.ToInt64() + $Offset)
     $ok = [DesktopIconsNative]::WriteProcessMemory($View.proc, $addr, $Bytes, [UIntPtr]::new($Bytes.Length), [ref]$written)
-    if (-not $ok) { throw 'WriteProcessMemory не удался' }
+    if (-not $ok) { throw (Get-Text -Key 'err.write' -Values @() -Fallback 'WriteProcessMemory не удался') }
 }
 
 function Read-Remote {
@@ -626,7 +638,7 @@ function Read-Remote {
     $read = [UIntPtr]::Zero
     $addr = [IntPtr]($View.remote.ToInt64() + $Offset)
     $ok = [DesktopIconsNative]::ReadProcessMemory($View.proc, $addr, $buf, [UIntPtr]::new($Length), [ref]$read)
-    if (-not $ok) { throw 'ReadProcessMemory не удался' }
+    if (-not $ok) { throw (Get-Text -Key 'err.read' -Values @() -Fallback 'ReadProcessMemory не удался') }
     return , $buf
 }
 

@@ -14,8 +14,10 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName Microsoft.VisualBasic
 
-. (Join-Path $PSScriptRoot 'lib\Engine.ps1')
+# Строки подключаем раньше движка: движок при загрузке проверяет разрядность
+# и берёт текст ошибки из таблицы.
 . (Join-Path $PSScriptRoot 'lib\Strings.ps1')
+. (Join-Path $PSScriptRoot 'lib\Engine.ps1')
 
 
 [System.Windows.Forms.Application]::EnableVisualStyles()
@@ -147,6 +149,17 @@ function Get-OrCreateGroup {
 }
 
 function Get-OtherGroupName { return (T 'group.other') }
+
+# Имя служебной группы должно соответствовать языку интерфейса, откуда бы
+# язык ни пришёл: комбобокс, -Lang или config.json.
+function Sync-OtherGroupName {
+    $ru = Get-GroupName -Id 'other' -Lang 'ru'
+    $en = Get-GroupName -Id 'other' -Lang 'en'
+    $target = T 'group.other'
+    foreach ($g in $script:Groups) {
+        if ($g.name -eq $ru -or $g.name -eq $en) { $g.name = $target }
+    }
+}
 
 function Remove-ItemFromAllGroups {
     param([string]$ItemName)
@@ -380,6 +393,11 @@ function Update-Language {
     $lblLang.Text = T 'lbl.lang'
     $lblItemsHint.Text = T 'hint.order'
     $lblHelp.Text = (T 'lbl.help').Trim()
+    # высоту считаем по тексту: в русском строк больше, и фиксированная
+    # высота срезала последнюю строку
+    $helpSize = [System.Windows.Forms.TextRenderer]::MeasureText($lblHelp.Text, $lblHelp.Font)
+    $need = $helpSize.Height + 6
+    if ($need -gt $lblHelp.Height) { $lblHelp.Height = $need }
 
     Update-BackgroundLabel
 
@@ -405,14 +423,9 @@ function Set-InterfaceLanguage {
     if (-not (Test-LanguageCode $Code)) { return }
     if ($Code -eq $script:UiLanguage) { return }
 
-    $oldOther = (T 'group.other')
     Set-Language $Code
-    $newOther = (T 'group.other')
-
-    # служебная группа «Прочее»/«Misc» переименовывается вместе с интерфейсом
-    foreach ($g in $script:Groups) {
-        if ($g.name -eq $oldOther) { $g.name = $newOther }
-    }
+    # служебная группа переименовывается вместе с интерфейсом
+    Sync-OtherGroupName
 
     Update-Language
     Save-Config
@@ -453,7 +466,9 @@ function Update-ItemList {
     $g = Get-SelectedGroup
     if ($g) {
         foreach ($i in @($g.items)) { [void]$lstItems.Items.Add($i) }
-        $grpItems.Text = (T 'grp.itemsOf' @($g.name))
+        $shown = $g.name
+        if ($shown.Length -gt 40) { $shown = $shown.Substring(0, 40) + '…' }
+        $grpItems.Text = (T 'grp.itemsOf' @($shown))
     }
     else {
         $grpItems.Text = T 'grp.items'
@@ -576,7 +591,7 @@ $btnScan.Add_Click({
         Update-GroupList
         Update-ItemList
         Update-Preview
-        $status.Text = (T 'status.scanned' @($script:Items.Count))
+        $status.Text = (T 'status.scanned' @($script:Items.Count, (Get-OtherGroupName)))
     })
 
 $btnPropose.Add_Click({
@@ -647,7 +662,7 @@ $btnDelete.Add_Click({
         $g = Get-SelectedGroup
         if (-not $g) { return }
         $ans = [System.Windows.Forms.MessageBox]::Show(
-            (T 'dlg.deleteText' @($g.name)),
+            (T 'dlg.deleteText' @($g.name, (Get-OtherGroupName))),
             (T 'dlg.deleteTitle'),
             'YesNo', 'Question')
         if ($ans -ne 'Yes') { return }
@@ -769,7 +784,7 @@ $btnBg.Add_Click({
         $loaded = $null
         try {
             $loaded = Get-BackgroundImage -Path $dlg.FileName
-            if (-not $loaded) { throw 'не удалось прочитать изображение' }
+            if (-not $loaded) { throw (T 'err.imageRead') }
         }
         catch {
             [System.Windows.Forms.MessageBox]::Show(
@@ -850,7 +865,8 @@ $btnSaveWall.Add_Click({
         $groups = @($script:Groups | Where-Object { @($_.items).Count -gt 0 })
         if ($groups.Count -eq 0) { return }
         $dlg = New-Object System.Windows.Forms.SaveFileDialog
-        $dlg.Filter = 'PNG|*.png'
+        $dlg.Title = T 'dlg.wallTitle'
+        $dlg.Filter = T 'dlg.wallFilter'
         $dlg.FileName = 'desktop-groups.png'
         if ($dlg.ShowDialog() -eq 'OK') {
             $layout = New-Layout $groups $script:Screen $script:Grid
@@ -923,6 +939,10 @@ $form.Add_Shown({
                 Save-Config
             }
         }
+
+        # Имя служебной группы приводим к языку интерфейса: он мог прийти
+        # из config.json или параметра -Lang, минуя комбобокс.
+        Sync-OtherGroupName
 
         # Переключатель языка выставляем так, чтобы обработчик не сработал.
         # WinForms доставляет SelectedIndexChanged отложенно, уже после снятия

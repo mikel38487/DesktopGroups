@@ -38,7 +38,7 @@ $script:StringTable = @{
         'lbl.help'               = @"
 Как это работает
 
-1. «Сканировать стол» — читает ярлыки, папки и файлы.
+1. «Сканировать стол» — читает значки, папки и файлы.
 2. «Предложить группы» — раскладывает значки по именам.
 3. Свои группы: «Новая», «Переименовать», «Удалить»,
    стрелки меняют порядок блоков.
@@ -51,7 +51,7 @@ $script:StringTable = @{
 
         'status.ready'           = 'Готово'
         'status.scanning'        = 'Сканирую рабочий стол…'
-        'status.scanned'         = 'Найдено значков: {0}. Группы сохранены, новые — в «Прочее».'
+        'status.scanned'         = 'Найдено значков: {0}. Группы сохранены, новые — в «{1}».'
         'status.proposed'        = 'Предложено групп: {0}'
         'status.created'         = 'Создана группа «{0}»'
         'status.renamed'         = 'Группа переименована в «{0}»'
@@ -78,7 +78,7 @@ $script:StringTable = @{
         'msg.replaceTitle'       = 'Предложить группы'
         'msg.replaceText'        = 'Заменить текущие группы предложенными?'
         'msg.noGroups'           = 'Нет групп со значками.'
-        'msg.autoArrange'        = "На рабочем столе включено «Упорядочить автоматически» — Windows переставит значки, и рамки разъедутся.`r`n`r`nВыключите его: правый клик по столу → Упорядочить значки → снять «Упорядочить автоматически». Потом повторите."
+        'msg.autoArrange'        = "На рабочем столе включено автоматическое упорядочивание значков — Windows переставит их, и рамки разъедутся.`r`n`r`nВыключите его: правый клик по столу → Вид → снять «Упорядочить значки автоматически». Потом повторите."
         'msg.overflow'           = 'Блоки не влезают на экран. Продолжить?'
         'msg.noBackups'          = 'Бэкапов ещё нет: они создаются при каждом применении раскладки.'
         'msg.restoreTitle'       = 'Восстановить'
@@ -95,13 +95,24 @@ $script:StringTable = @{
         'dlg.renameTitle'        = 'Переименовать'
         'dlg.renamePrompt'       = 'Новое название группы'
         'dlg.deleteTitle'        = 'Удалить'
-        'dlg.deleteText'         = 'Удалить группу «{0}»? Значки вернутся в «Прочее».'
+        'dlg.deleteText'         = 'Удалить группу «{0}»? Значки вернутся в «{1}».'
         'dlg.addTitle'           = 'Добавить значки в «{0}»'
         'dlg.addButton'          = 'Добавить'
         'dlg.cancel'             = 'Отмена'
         'dlg.noFree'             = 'Свободных значков нет — все уже в группах.'
         'dlg.bgFilter'           = 'Изображения|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.webp|Все файлы|*.*'
         'dlg.bgTitle'            = 'Фоновый рисунок обоев'
+        'dlg.wallTitle'          = 'Куда сохранить обои'
+        'dlg.wallFilter'         = 'PNG|*.png'
+
+        'err.noView'             = 'Не найден список значков рабочего стола (SysListView32)'
+        'err.openProcess'        = 'Не удалось открыть процесс explorer.exe'
+        'err.alloc'              = 'Не удалось выделить память в explorer.exe'
+        'err.write'              = 'WriteProcessMemory не удался'
+        'err.read'               = 'ReadProcessMemory не удался'
+        'err.imageTooBig'        = 'файл фона слишком большой: {0} МБ'
+        'err.imageRead'          = 'не удалось прочитать изображение'
+        'err.bitness'            = 'DesktopGroups требует 64-битный PowerShell: под 32-битным хостом структура LVITEM не совпадает с explorer.exe'
 
         'group.other'            = 'Прочее'
     }
@@ -154,7 +165,7 @@ How it works
 
         'status.ready'           = 'Ready'
         'status.scanning'        = 'Scanning the desktop…'
-        'status.scanned'         = 'Icons found: {0}. Groups kept, new ones go to "Misc".'
+        'status.scanned'         = 'Icons found: {0}. Groups kept, new ones go to "{1}".'
         'status.proposed'        = 'Groups suggested: {0}'
         'status.created'         = 'Group «{0}» created'
         'status.renamed'         = 'Group renamed to «{0}»'
@@ -181,7 +192,7 @@ How it works
         'msg.replaceTitle'       = 'Suggest groups'
         'msg.replaceText'        = 'Replace the current groups with the suggested ones?'
         'msg.noGroups'           = 'No groups with icons.'
-        'msg.autoArrange'        = "«Auto arrange icons» is turned on, so Windows will move the icons and the frames will no longer match.`r`n`r`nTurn it off: right-click the desktop → View → uncheck «Auto arrange icons». Then try again."
+        'msg.autoArrange'        = "Auto arrange icons is turned on, so Windows will move the icons and the frames will no longer match.`r`n`r`nTurn it off: right-click the desktop → View → uncheck Auto arrange icons. Then try again."
         'msg.overflow'           = 'The blocks do not fit the screen. Continue?'
         'msg.noBackups'          = 'No backups yet: they are created on every layout apply.'
         'msg.restoreTitle'       = 'Restore'
@@ -198,26 +209,57 @@ How it works
         'dlg.renameTitle'        = 'Rename'
         'dlg.renamePrompt'       = 'New group name'
         'dlg.deleteTitle'        = 'Delete'
-        'dlg.deleteText'         = 'Delete the group «{0}»? Its icons will move to «Misc».'
+        'dlg.deleteText'         = 'Delete the group {0}? Its icons will move to {1}.'
         'dlg.addTitle'           = 'Add icons to «{0}»'
         'dlg.addButton'          = 'Add'
         'dlg.cancel'             = 'Cancel'
         'dlg.noFree'             = 'No free icons — everything is already in groups.'
         'dlg.bgFilter'           = 'Images|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.webp|All files|*.*'
         'dlg.bgTitle'            = 'Wallpaper background image'
+        'dlg.wallTitle'          = 'Save the wallpaper as'
+        'dlg.wallFilter'         = 'PNG|*.png'
+
+        'err.noView'             = 'Desktop icon list (SysListView32) not found'
+        'err.openProcess'        = 'Could not open explorer.exe'
+        'err.alloc'              = 'Could not allocate memory in explorer.exe'
+        'err.write'              = 'WriteProcessMemory failed'
+        'err.read'               = 'ReadProcessMemory failed'
+        'err.imageTooBig'        = 'background file is too large: {0} MB'
+        'err.imageRead'          = 'could not read the image'
+        'err.bitness'            = 'DesktopGroups requires 64-bit PowerShell: under a 32-bit host the LVITEM structure does not match explorer.exe'
 
         'group.other'            = 'Misc'
     }
 }
 
 function Get-SystemLanguage {
-    # Язык интерфейса по языку самой Windows.
-    # Важно: ScriptUICulture в Windows PowerShell 5.1 всегда en-US (оболочка
-    # принудительно отдаёт английские сообщения), поэтому опираемся на
-    # InstalledUICulture — он отражает установленный язык системы.
+    # Порядок источников:
+    # 1) PreferredUILanguages — язык отображения Windows, если задан явно;
+    # 2) InstalledUICulture — язык установки (в PowerShell 5.1 CurrentUICulture
+    #    всегда en-US, поэтому он не годится).
+    try {
+        $pref = (Get-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name PreferredUILanguages -ErrorAction Stop).PreferredUILanguages
+        if ($pref) {
+            $first = @($pref)[0]
+            if ($first -like 'ru*') { return 'ru' }
+            if ($first -like 'en*') { return 'en' }
+        }
+    }
+    catch {
+        Write-Verbose 'PreferredUILanguages недоступен — смотрим язык установки'
+    }
+
     $c = [System.Globalization.CultureInfo]::InstalledUICulture
     if ($c -and $c.TwoLetterISOLanguageName -eq 'ru') { return 'ru' }
     return 'en'
+}
+
+function Test-StringKey {
+    param([string]$Key)
+    if (-not $Key) { return $false }
+    $table = $script:StringTable[$script:UiLanguage]
+    if ($table -and $table.ContainsKey($Key)) { return $true }
+    return ($script:StringTable['en'].ContainsKey($Key))
 }
 
 function Test-LanguageCode {

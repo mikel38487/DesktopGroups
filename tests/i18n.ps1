@@ -36,14 +36,40 @@ foreach ($lang in @('ru', 'en')) {
 
 # все ключи, которые реально используются в коде, должны существовать
 $luaKeys = @{}
-foreach ($file in @('DesktopGroups.ps1')) {
+foreach ($file in @('DesktopGroups.ps1', 'lib\Engine.ps1')) {
     $text = [IO.File]::ReadAllText((Join-Path $root $file), [Text.UTF8Encoding]::new($true))
     foreach ($m in [regex]::Matches($text, "T\s+'([a-z][a-z0-9]*\.[A-Za-z0-9]+)'")) {
+        $luaKeys[$m.Groups[1].Value] = $true
+    }
+    foreach ($m in [regex]::Matches($text, "-Key '([a-z][a-z0-9]*\.[A-Za-z0-9]+)'")) {
         $luaKeys[$m.Groups[1].Value] = $true
     }
 }
 $missing = @($luaKeys.Keys | Where-Object { $ruKeys -notcontains $_ })
 Check 'все ключи из кода есть в таблице' ($missing.Count -eq 0) ($missing -join ', ')
+
+# литералы там, где должен быть перевод: .Text и MessageBox
+$literals = @()
+foreach ($file in @('DesktopGroups.ps1')) {
+    $lines = [IO.File]::ReadAllLines((Join-Path $root $file), [Text.UTF8Encoding]::new($true))
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        $l = $lines[$i]
+        if ($l -match "\.Text\s*=\s*'[^']*[А-Яа-яЁё]{3}" ) { $literals += "${file}:$($i+1)" }
+        if ($l -match "MessageBox\]::Show\('" ) { $literals += "${file}:$($i+1)" }
+    }
+}
+Check 'нет русских литералов в .Text и MessageBox' ($literals.Count -eq 0) ($literals -join ', ')
+
+# одинаковые наборы плейсхолдеров в обоих языках
+$mismatch = @()
+foreach ($k in $ruKeys) {
+    $ruText = [string]$script:StringTable['ru'][$k]
+    $enText = [string]$script:StringTable['en'][$k]
+    $ruPh = @([regex]::Matches($ruText, '\{\d+\}') | ForEach-Object { $_.Value } | Sort-Object -Unique)
+    $enPh = @([regex]::Matches($enText, '\{\d+\}') | ForEach-Object { $_.Value } | Sort-Object -Unique)
+    if (($ruPh -join ',') -ne ($enPh -join ',')) { $mismatch += "$k (ru: $($ruPh -join ',') / en: $($enPh -join ','))" }
+}
+Check 'плейсхолдеры совпадают в обоих языках' ($mismatch.Count -eq 0) ($mismatch -join '; ')
 
 # подстановка параметров
 Set-Language 'ru'
