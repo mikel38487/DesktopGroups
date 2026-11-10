@@ -1,4 +1,4 @@
-# Security policy
+﻿# Security policy
 
 Русская версия: [SECURITY.ru.md](SECURITY.ru.md)
 
@@ -124,6 +124,8 @@ applies. What actually interrupts the first run is different:
 | **Azure Artifact Signing** (formerly Trusted Signing) | from $9.99/month, CI-friendly | needs 3+ years of verifiable business history; not available to individuals |
 | **Microsoft Store** | free | not applicable: this is a script tool, not a packaged app |
 | **EV certificate** | most expensive | no SmartScreen benefit any more |
+
+Concrete plan for this repository: [docs/code-signing.md](docs/code-signing.md).
 
 There is **no manual submission** that grants consumer reputation; it builds
 organically from download volume. Enterprise administrators can submit a file through

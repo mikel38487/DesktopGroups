@@ -1,4 +1,4 @@
-# DesktopGroups
+﻿# DesktopGroups
 
 Group desktop shortcuts into rectangles — and let the wallpaper draw the frames
 and labels for those groups.
@@ -204,6 +204,27 @@ powershell.exe -NoProfile -File .\tools\build-package.ps1
 | `tools\install.ps1`, `tools\uninstall.ps1` | install and remove without admin rights |
 | `tests\` | automatic checks; `tests\manual\` is opt-in |
 | `docs\` | user guide, security notes, review reports |
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://signpath.io), certificate by
+[SignPath Foundation](https://signpath.org).
+
+- **Committers and reviewers:** `mikel38487` (project owner). Every change must pass
+  the CI checks in [.github/workflows/ci.yml](.github/workflows/ci.yml): encoding and
+  parsing under Windows PowerShell 5.1 and 7, PSScriptAnalyzer, smoke tests,
+  translation completeness, config fuzzing. Independent review reports are kept in
+  [docs/review](docs/review).
+- **Approvers:** `mikel38487`. Release artifacts are built only by
+  [.github/workflows/release.yml](.github/workflows/release.yml) from a version tag,
+  after the same checks, and are published with a build-provenance attestation.
+- **Privacy policy:** this program will not transfer any information to other
+  networked systems unless specifically requested by the user or the person
+  installing or operating it. In practice it makes no network requests at all, and
+  its full behaviour is listed in [SECURITY.md](SECURITY.md).
+
+The concrete signing plan, including the workflow change and how the same setup is
+reused for other projects, is in [docs/code-signing.md](docs/code-signing.md).
 
 ## License
 
