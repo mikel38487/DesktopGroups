@@ -519,10 +519,12 @@ function Save-Wallpaper {
 
         $textRect = New-Object System.Drawing.RectangleF([single]($x0 + 10), [single]($y0 - 31), [single]($bw - 16), [single]20)
 
-        # тёмная плашка под подписью: текст читается и на светлом фото
+        # тёмная плашка под подписью: текст читается и на светлом фото.
+        # Плотность почти непрозрачная: при 170 контраст подписи на белой
+        # картинке падал до 2,9 — ниже порога читаемости.
         $tw = [Math]::Min(($bw - 8), ($g.MeasureString($b.name, $font).Width + 14))
         $plate = New-RoundRectPath ($x0 + 2) ($y0 - 32) $tw 22 6
-        $plateBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(170, 12, 16, 24))
+        $plateBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(235, 10, 13, 20))
         $g.FillPath($plateBrush, $plate)
         $plateBrush.Dispose()
         $plate.Dispose()

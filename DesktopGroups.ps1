@@ -202,8 +202,8 @@ $form.Controls.Add($lblTop)
 
 $lblLang = New-Object System.Windows.Forms.Label
 # ширина с запасом: «Language:» шире, чем «Язык:»
-$lblLang.Location = New-Object System.Drawing.Point(776, 19)
-$lblLang.Size = New-Object System.Drawing.Size(68, 20)
+$lblLang.Location = New-Object System.Drawing.Point(772, 19)
+$lblLang.Size = New-Object System.Drawing.Size(72, 20)
 $lblLang.TextAlign = 'MiddleRight'
 $form.Controls.Add($lblLang)
 

@@ -1,4 +1,4 @@
-# Security policy
+﻿# Security policy
 
 Русская версия: [SECURITY.ru.md](SECURITY.ru.md)
 
@@ -66,7 +66,7 @@ powershell.exe -NoProfile -File .\tests\i18n.ps1
 git log -p | Select-String -Pattern 'ghp_|api[_-]?key|password\s*=' -CaseSensitive:$false
 ```
 
-More on tooling: [docs/security-tooling.md](security-tooling.md).
+More on tooling: [docs/security-tooling.md](docs/security-tooling.md).
 
 ## Reporting a vulnerability
 

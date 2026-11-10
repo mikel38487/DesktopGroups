@@ -201,6 +201,41 @@ finally {
     }
 }
 
+# --- читаемость подписи на светлом фоне ---
+$whiteBg = Join-Path ([IO.Path]::GetTempPath()) ('dg-white-' + [guid]::NewGuid().ToString('N') + '.png')
+$whiteOut = Join-Path ([IO.Path]::GetTempPath()) ('dg-whiteout-' + [guid]::NewGuid().ToString('N') + '.png')
+try {
+    Add-Type -AssemblyName System.Drawing
+    $wb = New-Object System.Drawing.Bitmap(320, 180)
+    $wg = [System.Drawing.Graphics]::FromImage($wb)
+    $wg.Clear([System.Drawing.Color]::White)
+    $wg.Dispose()
+    $wb.Save($whiteBg, [System.Drawing.Imaging.ImageFormat]::Png)
+    $wb.Dispose()
+
+    $null = Save-Wallpaper $layout $whiteOut 1920 1080 12 $whiteBg
+    $wi = [System.Drawing.Image]::FromFile($whiteOut)
+    $wbc = New-Object System.Drawing.Bitmap($wi)
+    $b0 = $layout.blocks[0]
+    $px = $wbc.GetPixel([int]($b0.x - 12 + 8), [int]($b0.y - 12 - 21))
+    $wbc.Dispose(); $wi.Dispose()
+
+    # плашка должна быть заметно темнее светлой картинки
+    $lum = 0.2126 * $px.R + 0.7152 * $px.G + 0.0722 * $px.B
+    Check 'плашка подписи тёмная даже на белом фоне' ($lum -lt 60) "яркость плашки $([math]::Round($lum,1))"
+
+    # контраст подписи (цвет группы) против плашки — не ниже AA 4.5
+    $labelLum = 0.2126 * 224 + 0.7152 * 163 + 0.0722 * 62
+    $ratio = ($labelLum + 5) / ($lum + 5)
+    if ($ratio -lt 1) { $ratio = 1 / $ratio }
+    Check 'контраст подписи не ниже 4.5' ($ratio -ge 4.5) "контраст $([math]::Round($ratio,2))"
+}
+finally {
+    foreach ($f in @($whiteBg, $whiteOut)) {
+        if ($f -and (Test-Path -LiteralPath $f)) { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue }
+    }
+}
+
 # --- сопоставление имён ---
 $cfg = @([pscustomobject]@{ name = 'Игры'; color = '#E0A33E'; items = @('Steam', 'counter-strike 2') })
 $resolved = Resolve-GroupItems $cfg $items

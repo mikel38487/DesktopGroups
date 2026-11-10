@@ -1,4 +1,4 @@
-# Политика безопасности
+﻿# Политика безопасности
 
 English version: [SECURITY.md](SECURITY.md)
 
@@ -66,7 +66,7 @@ powershell.exe -NoProfile -File .\tests\i18n.ps1
 git log -p | Select-String -Pattern 'ghp_|api[_-]?key|password\s*=' -CaseSensitive:$false
 ```
 
-Подробнее об инструментах — в [docs/security-tooling.md](security-tooling.md).
+Подробнее об инструментах — в [docs/security-tooling.md](docs/security-tooling.md).
 
 ## Как сообщить об уязвимости
 
