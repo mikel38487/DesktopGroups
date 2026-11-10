@@ -17,6 +17,8 @@ Risk assessment needs the full list:
 | Action | Where | Why |
 |---|---|---|
 | Read icon names and positions | `explorer.exe` process, `SysListView32` window | learn what is on the desktop and where |
+| Enumerate desktop folders | `%USERPROFILE%\Desktop` and `%PUBLIC%\Desktop` | find shortcuts, folders and files to group |
+| Read registry | `HKCU\Software\Microsoft\Windows\Shell\Bags\1\Desktop` (`FFlags`) | check whether "Auto arrange icons" is on, and refuse to apply if so |
 | Write icon positions | same window, `LVM_SETITEMPOSITION32` | place icons into blocks |
 | Read a background image | the file you pick in the dialog | use it as the wallpaper base |
 | Write registry | `HKCU\Control Panel\Desktop` (`Wallpaper`, `WallpaperStyle`, `TileWallpaper`) | apply the generated wallpaper |
@@ -48,9 +50,10 @@ What it does **not** do:
 
 ## Verifying the code yourself
 
-Everything the program does is visible in three files: `DesktopGroups.ps1` (window),
-`lib\Engine.ps1` (logic) and `lib\Strings.ps1` (interface text). There are no
-external dependencies; all code is in the repository.
+Everything the program does is visible in four files: `DesktopGroups.ps1` (window),
+`lib\Engine.ps1` (logic), `lib\Strings.ps1` (interface text) and
+`lib\DesktopIcons.cs` (the P/Invoke layer, compiled at startup by `Add-Type`).
+There are no external dependencies; all code is in the repository.
 
 ```powershell
 # static analysis

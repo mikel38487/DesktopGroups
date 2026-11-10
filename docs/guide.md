@@ -1,4 +1,4 @@
-﻿# DesktopGroups — user guide
+# DesktopGroups — user guide
 
 Русская версия: [guide.ru.md](guide.ru.md)
 
@@ -53,6 +53,14 @@ there, and the program will fail to save the config and the wallpaper.
 Use *Apps & features* in Windows settings, or run `uninstall.cmd` from the install
 folder. The program is removed, the Start Menu shortcut is deleted, the
 *Apps & features* entry disappears, and your previous wallpaper is restored.
+
+Before the folder is deleted, `config.json` is copied to
+`%APPDATA%\DesktopGroups\config-<date>-<time>.json`, so your groups are not lost.
+Rename it back to `config.json` in a new install to reuse them. `backups\` and the
+generated `wallpaper.png` are **not** kept — they can be regenerated.
+
+For a **portable** copy the whole unpacked folder is removed, so the script refuses
+to run without `-Force`; that protects files you happened to put there:
 
 ## First run
 
@@ -122,12 +130,13 @@ so the two language versions of the program agree on it.
 
 ## Background image
 
-**Background image…** opens a file dialog (PNG, JPEG, BMP, GIF, WEBP).
+**Background image…** opens a file dialog (PNG, JPEG, BMP, GIF).
 **No background** returns to the default dark gradient.
 
 How the picture is used:
 
 - scaled to fill the whole screen with **center crop** — no stretching, no bars;
+- rotated according to the EXIF orientation tag, so phone photos are not sideways;
 - covered with a vertical dark veil (denser at the top, where the labels are);
 - frames are drawn on top with a slightly stronger fill and outline so they stay
   visible over a photo;
@@ -140,6 +149,7 @@ fall back to the gradient and say so in the status line.
 Limits and safety:
 
 - files larger than 100 MB are rejected with a message;
+- images larger than 100 megapixels are rejected (a small PNG can unpack into gigabytes);
 - a file that is not a real image is rejected and **never** written to the config;
 - a path that stops existing falls back to the gradient on the next apply.
 

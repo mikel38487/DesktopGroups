@@ -1,4 +1,4 @@
-# Как проверять такой код на уязвимости
+﻿# Как проверять такой код на уязвимости
 
 Заметка про инструменты: чем проверять PowerShell-программу, которая лезет
 в процесс `explorer.exe`, пишет в реестр и генерирует обои. Всё проверено на
@@ -63,7 +63,7 @@ PowerShell в списке нет, поэтому «code scanning» на GitHub 
 Перед релизом полезно прогнать ZIP и, если делаете EXE, сам EXE.
 
 - Веб: загрузить файл вручную, посмотреть отчёт.
-- API: `curl --request POST --url https://www.virustotal.com/api/v3/files --header "x-apikey: $env:VT_API_KEY" --form file=@dist/DesktopGroups-1.0.0.zip`
+- API: `curl --request POST --url https://www.virustotal.com/api/v3/files --header "x-apikey: $env:VT_API_KEY" --form file=@dist/DesktopGroups-<версия>.zip`
 - Дальше — `GET /api/v3/analyses/{id}` до `status: completed`.
 
 Важно понимать: PowerShell-скрипт, который вызывает `WriteProcessMemory`

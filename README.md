@@ -67,7 +67,9 @@ unpacked folder — nothing is written outside that folder except your own
 `config.json` and `wallpaper.png`.
 
 To remove it, use *Apps & features* in Windows settings, or run `uninstall.cmd`.
-Your previous wallpaper is restored on uninstall.
+Your previous wallpaper is restored, and your groups are copied to
+`%APPDATA%\DesktopGroups` before the program folder is deleted. A portable copy
+needs `uninstall.cmd -Force`, because the whole unpacked folder is removed.
 
 ### Verify what you downloaded
 
@@ -112,9 +114,10 @@ and the special "Misc" group — it does not rename groups you created yourself.
 
 ## Background image
 
-Click **Background image…**, pick a PNG, JPEG, BMP, GIF or WEBP file.
+Click **Background image…**, pick a PNG, JPEG, BMP or GIF file.
 
 - The picture is scaled to fill the screen (center crop, no distortion).
+- Phone photos are rotated by their EXIF orientation, so they do not land sideways.
 - A dark gradient veil is applied so labels stay readable on bright photos.
 - Group frames and labels are drawn on top, each label on its own dark plate.
 - The path is stored in `config.json` as `"background": "C:\\pics\\wall.png"`.
@@ -122,7 +125,8 @@ Click **Background image…**, pick a PNG, JPEG, BMP, GIF or WEBP file.
 - The file is read into memory and never locked, so you can move or delete it later
   without breaking the program; a missing file simply falls back to the gradient.
 
-Large files are rejected above 100 MB. Broken images are reported and never stored.
+Files above 100 MB, or images above 100 megapixels, are rejected. Broken images are
+reported and never stored. Transparent areas show the dark gradient underneath.
 
 ## Troubleshooting
 
@@ -152,6 +156,16 @@ again.
 **Icons moved by themselves.**
 "Auto arrange icons" is on. Turn it off: right-click the desktop →
 **View** → uncheck **Auto arrange icons**.
+
+## Limitations
+
+- **Primary monitor only.** Icons and frames are laid out for the primary display.
+- **Static frames.** Move an icon by hand and it leaves its cell; re-apply to rebuild.
+- **No drag & drop on the desktop.** Groups are edited in the window.
+- **Auto arrange must stay off**, otherwise Windows re-sorts the icons.
+- **No code signature**, so SmartScreen may warn on the first run — see
+  [SECURITY.md](SECURITY.md#smartscreen-code-signing-and-why-you-see-a-warning).
+- **At most 100 megapixels per background image** to keep memory sane.
 
 ## Development
 

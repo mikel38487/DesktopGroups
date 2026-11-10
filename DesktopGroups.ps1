@@ -49,6 +49,11 @@ $script:Items = @()
 $script:Screen = Get-ScreenInfo
 $script:Grid = Get-DefaultGrid
 $script:BackgroundImage = ''
+# кеш фона для предпросмотра: файл перечитывается только при смене пути
+# или времени изменения, а не на каждой перерисовке
+$script:PreviewBgImage = $null
+$script:PreviewBgPath = ''
+$script:PreviewBgStamp = 0
 $script:SuppressLanguageEvent = $false
 
 # язык: параметр важнее локали, файл настроек важнее параметра
@@ -110,8 +115,26 @@ function Import-Config {
 
     if ($data.background) {
         $bg = [string]$data.background
-        if (Test-Path -LiteralPath $bg -PathType Leaf) { $script:BackgroundImage = $bg }
-        else { $script:BackgroundImage = '' }
+        $ok = $false
+        if (Test-Path -LiteralPath $bg -PathType Leaf) {
+            # файл может существовать и не быть картинкой: проверяем чтением,
+            # иначе подпись «Фон: …» обещает то, чего не будет
+            $probe = $null
+            try {
+                $probe = Get-BackgroundImage -Path $bg
+                $ok = ($null -ne $probe)
+            }
+            catch {
+                $script:BackgroundNote = $_.Exception.Message
+            }
+            finally {
+                if ($probe) { $probe.Image.Dispose(); $probe.Stream.Dispose() }
+            }
+        }
+        else {
+            $script:BackgroundNote = $bg
+        }
+        if ($ok) { $script:BackgroundImage = $bg } else { $script:BackgroundImage = '' }
     }
 
     $script:Groups.Clear()
@@ -482,6 +505,52 @@ function Get-SelectedGroup {
     return $null
 }
 
+function Get-PreviewBackground {
+    if (-not $script:BackgroundImage) { return $null }
+
+    $stamp = 0
+    try { $stamp = (Get-Item -LiteralPath $script:BackgroundImage -ErrorAction Stop).LastWriteTimeUtc.Ticks }
+    catch { return $null }
+
+    if ($script:PreviewBgImage -and $script:PreviewBgPath -eq $script:BackgroundImage -and $script:PreviewBgStamp -eq $stamp) {
+        return $script:PreviewBgImage
+    }
+
+    if ($script:PreviewBgImage) {
+        $script:PreviewBgImage.Dispose()
+        $script:PreviewBgImage = $null
+    }
+
+    $loaded = $null
+    try {
+        $loaded = Get-BackgroundImage -Path $script:BackgroundImage
+        if ($loaded) {
+            # поток освобождаем, картинку оставляем в кеше
+            $loaded.Stream.Dispose()
+            $script:PreviewBgImage = $loaded.Image
+            $script:PreviewBgPath = $script:BackgroundImage
+            $script:PreviewBgStamp = $stamp
+            return $script:PreviewBgImage
+        }
+    }
+    catch {
+        Write-Verbose 'фон в предпросмотре не отрисован: не удалось прочитать файл'
+    }
+    finally {
+        if ($loaded -and $loaded.Stream) { $loaded.Stream.Dispose() }
+    }
+    return $null
+}
+
+function Clear-PreviewBackground {
+    if ($script:PreviewBgImage) {
+        $script:PreviewBgImage.Dispose()
+        $script:PreviewBgImage = $null
+    }
+    $script:PreviewBgPath = ''
+    $script:PreviewBgStamp = 0
+}
+
 function Update-Preview {
     $preview.Invalidate()
     $groups = @($script:Groups | Where-Object { @($_.items).Count -gt 0 })
@@ -507,34 +576,40 @@ $preview.Add_Paint({
             $scaleY = $s.Height / [double]$script:Screen.height
             $scale = [Math]::Min($scaleX, $scaleY)
 
-            # фон показываем так же, как он ляжет на обои
-            if ($script:BackgroundImage) {
-                $loaded = $null
-                try {
-                    $loaded = Get-BackgroundImage -Path $script:BackgroundImage
-                    if ($loaded) {
-                        $dstW = [int]($script:Screen.width * $scale)
-                        $dstH = [int]($script:Screen.height * $scale)
-                        $k = [Math]::Max($dstW / [double]$loaded.Image.Width, $dstH / [double]$loaded.Image.Height)
-                        $dw = [int][Math]::Ceiling($loaded.Image.Width * $k)
-                        $dh = [int][Math]::Ceiling($loaded.Image.Height * $k)
-                        $dx = [int](($dstW - $dw) / 2)
-                        $dy = [int](($dstH - $dh) / 2)
-                        $gfx.DrawImage($loaded.Image, (New-Object System.Drawing.Rectangle($dx, $dy, $dw, $dh)))
-                        $scrim = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(130, 0, 0, 0))
-                        $gfx.FillRectangle($scrim, 0, 0, $dstW, $dstH)
-                        $scrim.Dispose()
-                    }
-                }
-                catch {
-                    Write-Verbose 'фон в предпросмотре не отрисован'
-                }
-                finally {
-                    if ($loaded) {
-                        $loaded.Image.Dispose()
-                        $loaded.Stream.Dispose()
-                    }
-                }
+            $dstW = [int]($script:Screen.width * $scale)
+            $dstH = [int]($script:Screen.height * $scale)
+            if ($dstW -lt 1) { $dstW = 1 }
+            if ($dstH -lt 1) { $dstH = 1 }
+
+            # Подложка повторяет итог: сначала градиент, потом фото поверх.
+            # Так прозрачные PNG не дают чёрных областей, а предпросмотр
+            # совпадает с готовыми обоями по цвету вуали.
+            $bgRect = New-Object System.Drawing.Rectangle(0, 0, $dstW, $dstH)
+            $bgBrush = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+                $bgRect,
+                [System.Drawing.Color]::FromArgb(13, 16, 22),
+                [System.Drawing.Color]::FromArgb(24, 29, 41),
+                90)
+            $gfx.FillRectangle($bgBrush, $bgRect)
+            $bgBrush.Dispose()
+
+            $bgImg = Get-PreviewBackground
+            if ($bgImg) {
+                $k = [Math]::Max($dstW / [double]$bgImg.Width, $dstH / [double]$bgImg.Height)
+                $dw = [int][Math]::Ceiling($bgImg.Width * $k)
+                $dh = [int][Math]::Ceiling($bgImg.Height * $k)
+                $dx = [int](($dstW - $dw) / 2)
+                $dy = [int](($dstH - $dh) / 2)
+                $gfx.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+                $gfx.DrawImage($bgImg, (New-Object System.Drawing.Rectangle($dx, $dy, $dw, $dh)))
+
+                $scrim = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+                    $bgRect,
+                    [System.Drawing.Color]::FromArgb(120, 0, 0, 0),
+                    [System.Drawing.Color]::FromArgb(70, 0, 0, 0),
+                    90)
+                $gfx.FillRectangle($scrim, $bgRect)
+                $scrim.Dispose()
             }
 
             $groups = @($script:Groups | Where-Object { @($_.items).Count -gt 0 })
@@ -799,6 +874,7 @@ $btnBg.Add_Click({
         }
 
         $script:BackgroundImage = $dlg.FileName
+        Clear-PreviewBackground
         Save-Config
         Update-BackgroundLabel
         Update-Preview
@@ -807,6 +883,7 @@ $btnBg.Add_Click({
 
 $btnBgClear.Add_Click({
         $script:BackgroundImage = ''
+        Clear-PreviewBackground
         Save-Config
         Update-BackgroundLabel
         Update-Preview
@@ -836,6 +913,9 @@ $btnApply.Add_Click({
             # обои рисуем ровно в размере экрана: иначе на другом разрешении
             # Windows растянет картинку и рамки разъедутся со значками
             $null = Save-Wallpaper $layout $png $script:Screen.width $script:Screen.height 12 $script:BackgroundImage
+            if ($script:LastWallpaperError) {
+                $bgFail = $script:LastWallpaperError
+            }
             $ok = Set-DesktopWallpaper $png
 
             $msg = (T 'status.applied' @($res.placed, $res.passes))
@@ -847,6 +927,7 @@ $btnApply.Add_Click({
             if ($res.unknown.Count -gt 0) {
                 $msg += (T 'status.applyUnknown' @($res.unknown -join ', '))
             }
+            if ($bgFail) { $msg += '; ' + (T 'status.bgFailed' @($bgFail)) }
             if (-not $ok) { $msg += (T 'status.applyNoWall') }
             $status.Text = $msg
             Save-Config
@@ -965,6 +1046,7 @@ $form.Add_Shown({
     })
 
 $form.Add_FormClosing({
+        Clear-PreviewBackground
         try { Save-Config }
         catch { Write-Warning ('конфиг не сохранён: ' + $_.Exception.Message) }
     })

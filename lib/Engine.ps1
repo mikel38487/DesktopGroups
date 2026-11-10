@@ -400,29 +400,109 @@ function New-RoundRectPath {
     return $p
 }
 
+# Применяет поворот из EXIF (тег 0x0112): снимки с телефона иначе лежат боком.
+# Возвращает либо исходный объект, либо новый Bitmap; исходный освобождается.
+function Convert-BackgroundOrientation {
+    param($Image)
+
+    $orientation = 1
+    try {
+        if ($Image.PropertyIdList -contains 0x0112) {
+            $orientation = [int]$Image.GetPropertyItem(0x0112).Value[0]
+        }
+    }
+    catch {
+        Write-Verbose 'EXIF-ориентация недоступна'
+    }
+
+    if ($orientation -le 1 -or $orientation -gt 8) { return $Image }
+
+    $bmp = New-Object System.Drawing.Bitmap($Image)
+    switch ($orientation) {
+        2 { $bmp.RotateFlip([System.Drawing.RotateFlipType]::RotateNoneFlipX) }
+        3 { $bmp.RotateFlip([System.Drawing.RotateFlipType]::Rotate180FlipNone) }
+        4 { $bmp.RotateFlip([System.Drawing.RotateFlipType]::RotateNoneFlipY) }
+        5 { $bmp.RotateFlip([System.Drawing.RotateFlipType]::Rotate90FlipX) }
+        6 { $bmp.RotateFlip([System.Drawing.RotateFlipType]::Rotate90FlipNone) }
+        7 { $bmp.RotateFlip([System.Drawing.RotateFlipType]::Rotate270FlipX) }
+        8 { $bmp.RotateFlip([System.Drawing.RotateFlipType]::Rotate270FlipNone) }
+    }
+    $Image.Dispose()
+    return $bmp
+}
+
 # Загружает картинку в память и отдаёт её вместе с потоком.
 # Image::FromFile держал бы файл заблокированным до конца работы программы,
 # поэтому читаем байты и разбираем из памяти. Вызывающий обязан всё освободить.
 function Get-BackgroundImage {
-    param([string]$Path, [int]$MaxBytes = 104857600)   # 100 МБ — защита от абсурдных файлов
+    param(
+        [string]$Path,
+        [long]$MaxBytes = 104857600,     # 100 МБ — защита от абсурдных файлов
+        [long]$MaxPixels = 100000000     # 100 МП — защита от «декомпрессионных бомб»
+    )
 
     if ([string]::IsNullOrWhiteSpace($Path)) { return $null }
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
 
     $info = Get-Item -LiteralPath $Path -ErrorAction Stop
     if ($info.Length -le 0) { return $null }
-    if ($info.Length -gt $MaxBytes) { throw (Get-Text -Key 'err.imageTooBig' -Values @([math]::Round($info.Length / 1MB, 1)) -Fallback ('файл фона слишком большой: {0} МБ' -f [math]::Round($info.Length / 1MB, 1))) }
 
-    $bytes = [IO.File]::ReadAllBytes($info.FullName)
-    $ms = New-Object System.IO.MemoryStream(, $bytes)
+    if ($info.Length -gt $MaxBytes) {
+        $mb = [math]::Round($info.Length / 1MB, 1)
+        throw (Get-Text -Key 'err.imageTooBig' -Values @($mb) -Fallback ('файл фона слишком большой: {0} МБ' -f $mb))
+    }
+
+    $ms = $null
+    $img = $null
+    $probe = $null
+
+    # Только чтение файла: ошибки GDI+ здесь, их и оборачиваем.
     try {
+        $bytes = [IO.File]::ReadAllBytes($info.FullName)
+        $ms = New-Object System.IO.MemoryStream(, $bytes)
         $img = [System.Drawing.Image]::FromStream($ms)
     }
     catch {
-        $ms.Dispose()
+        if ($img) { $img.Dispose() }
+        if ($ms) { $ms.Dispose() }
+        $reason = Get-Text -Key 'err.imageRead' -Values @() -Fallback 'не удалось прочитать изображение'
+        throw ("$reason (GDI+: " + $_.Exception.Message + ')')
+    }
+
+    # Дальше свои проверки: их сообщения не нужно ничем оборачивать.
+    try {
+        # Маленький PNG может развернуться в гигабайты: считаем пиксели,
+        # а не только вес файла.
+        $pixels = [long]$img.Width * [long]$img.Height
+        if ($pixels -gt $MaxPixels) {
+            $mp = [math]::Round($pixels / 1000000, 0)
+            throw (Get-Text -Key 'err.imageTooManyPixels' -Values @($mp) -Fallback ('картинка слишком большая по размерам: {0} МП' -f $mp))
+        }
+
+        # Принудительная распаковка: обрезанный файл иначе проходит проверку
+        # и падает позже, уже при отрисовке.
+        try {
+            $probe = New-Object System.Drawing.Bitmap(1, 1)
+            $pg = [System.Drawing.Graphics]::FromImage($probe)
+            try { $pg.DrawImage($img, 0, 0, 1, 1) }
+            finally { $pg.Dispose() }
+            $probe.Dispose()
+            $probe = $null
+        }
+        catch {
+            $reason = Get-Text -Key 'err.imageRead' -Values @() -Fallback 'не удалось прочитать изображение'
+            throw ("$reason (GDI+: " + $_.Exception.Message + ')')
+        }
+
+        $img = Convert-BackgroundOrientation -Image $img
+        return [pscustomobject]@{ Image = $img; Stream = $ms }
+    }
+    catch {
+        if ($probe) { $probe.Dispose() }
+        if ($img) { $img.Dispose() }
+        if ($ms) { $ms.Dispose() }
         throw
     }
-    return [pscustomobject]@{ Image = $img; Stream = $ms }
 }
 
 function Save-Wallpaper {
@@ -442,7 +522,17 @@ function Save-Wallpaper {
 
     $rect = New-Object System.Drawing.Rectangle(0, 0, $Width, $Height)
 
-    # --- подложка: картинка пользователя, а без неё — градиент
+    # Градиент рисуем всегда: если у PNG есть прозрачность, сквозь неё будет
+    # видно градиент, а не чёрные области. Фото ложится поверх.
+    $brush = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+        $rect,
+        [System.Drawing.Color]::FromArgb(13, 16, 22),
+        [System.Drawing.Color]::FromArgb(24, 29, 41),
+        90)
+    $g.FillRectangle($brush, $rect)
+    $brush.Dispose()
+
+    $script:LastWallpaperError = $null
     $hasPhoto = $false
     if ($BackgroundImage) {
         $loaded = $null
@@ -463,8 +553,9 @@ function Save-Wallpaper {
             }
         }
         catch {
-            # битый или недоступный файл не должен ломать обои
+            # битый или недоступный файл не должен ломать обои, но и молчать нельзя
             $hasPhoto = $false
+            $script:LastWallpaperError = $_.Exception.Message
         }
         finally {
             if ($loaded) {
@@ -485,15 +576,6 @@ function Save-Wallpaper {
             90)
         $g.FillRectangle($scrim, $scrimRect)
         $scrim.Dispose()
-    }
-    else {
-        $brush = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
-            $rect,
-            [System.Drawing.Color]::FromArgb(13, 16, 22),
-            [System.Drawing.Color]::FromArgb(24, 29, 41),
-            90)
-        $g.FillRectangle($brush, $rect)
-        $brush.Dispose()
     }
 
     $plateAlpha = 26

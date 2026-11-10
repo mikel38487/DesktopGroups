@@ -33,6 +33,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Smoke-тесты провалены — релиз остановлен" }
           powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\i18n.ps1
           if ($LASTEXITCODE -ne 0) { throw "Проверка локализации провалена — релиз остановлен" }
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\fuzz-config.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Фаззинг конфига провален — релиз остановлен" }
 
       - name: Сборка архива
         shell: pwsh

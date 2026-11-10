@@ -1,11 +1,67 @@
 ﻿# Удаление DesktopGroups: ярлыки, запись в списке приложений, каталог программы.
-# Обои рабочего стола остаются — их возвращают в параметрах Windows.
+# Перед удалением настройки копируются в %APPDATA%\DesktopGroups, чтобы группы
+# не пропали. Обои возвращаются к тем, что были до установки.
 # Запускается из папки установки или через «Приложения» в параметрах системы.
+
+param(
+    [switch]$Purge,      # не сохранять настройки
+    [switch]$Force       # удалять, даже если это похоже на портативную копию
+)
 
 $ErrorActionPreference = 'SilentlyContinue'
 
 $dest = Split-Path -Parent $PSScriptRoot
 
+# проверяем, что это действительно каталог программы, а не что-то похожее
+if (-not (Test-Path -LiteralPath (Join-Path $dest 'DesktopGroups.ps1'))) {
+    Write-Host "Каталог $dest не похож на установку DesktopGroups — удаление отменено."
+    exit 1
+}
+
+$installedKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\DesktopGroups'
+
+# Важно: проверяем не «есть ли установка на машине», а «этот каталог — она».
+# Иначе запуск из распакованной папки сносил бы чужие установки и ярлыки.
+$installLocation = $null
+if (Test-Path -Path $installedKey) {
+    $installLocation = [string](Get-ItemProperty -Path $installedKey -ErrorAction SilentlyContinue).InstallLocation
+}
+$isInstalledHere = $false
+if ($installLocation) {
+    try {
+        $a = [IO.Path]::GetFullPath($installLocation).TrimEnd('\')
+        $b = [IO.Path]::GetFullPath($dest).TrimEnd('\')
+        $isInstalledHere = ($a -eq $b)
+    }
+    catch {
+        $isInstalledHere = $false
+    }
+}
+
+# Портативная копия: каталог целиком удаляется, поэтому предупреждаем,
+# если рядом могли лежать чужие файлы.
+if (-not $isInstalledHere -and -not $Force) {
+    Write-Host 'Это не установленная копия, а распакованная вручную.'
+    Write-Host "Каталог $dest будет удалён полностью, вместе с файлами, которые вы туда положили."
+    Write-Host 'Ни ярлыки, ни запись в списке приложений, ни обои затронуты не будут.'
+    Write-Host 'Если это не то, что нужно, закройте окно. Для удаления повторите с -Force.'
+    exit 2
+}
+
+# Настройки сохраняем до удаления: иначе вместе с программой уедут и группы.
+$config = Join-Path $dest 'config.json'
+$savedConfig = $null
+if ((Test-Path -LiteralPath $config) -and -not $Purge) {
+    $keepDir = Join-Path $env:APPDATA 'DesktopGroups'
+    New-Item -ItemType Directory -Path $keepDir -Force | Out-Null
+    $savedConfig = Join-Path $keepDir ('config-{0}.json' -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
+    Copy-Item -LiteralPath $config -Destination $savedConfig -Force
+    Write-Host "настройки сохранены: $savedConfig"
+}
+
+# Ярлыки, запись в приложениях и обои — только для установленной копии:
+# портативная папка не должна трогать систему.
+if ($isInstalledHere) {
 $links = @(
     (Join-Path ([Environment]::GetFolderPath('Programs')) 'DesktopGroups.lnk'),
     (Join-Path ([Environment]::GetFolderPath('Desktop')) 'DesktopGroups.lnk')
@@ -17,9 +73,8 @@ foreach ($link in $links) {
     }
 }
 
-$key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\DesktopGroups'
-if (Test-Path -Path $key) {
-    Remove-Item -Path $key -Recurse -Force
+if (Test-Path -Path $installedKey) {
+    Remove-Item -Path $installedKey -Recurse -Force
     Write-Host 'удалена запись в списке приложений'
 }
 
@@ -53,11 +108,9 @@ if (-not $restored) {
         Write-Host 'поставлены стандартные обои Windows'
     }
 }
-
-# проверяем, что это действительно каталог программы, а не что-то похожее
-if (-not (Test-Path -LiteralPath (Join-Path $dest 'DesktopGroups.ps1'))) {
-    Write-Host "Каталог $dest не похож на установку DesktopGroups — удаление отменено."
-    exit 1
+}
+else {
+    Write-Host 'Портативная копия: ярлыки, запись в списке приложений и обои не тронуты.'
 }
 
 # Каталог удаляем отдельным процессом: этот скрипт лежит внутри него.
@@ -72,3 +125,4 @@ Start-Process -FilePath $psExe -WindowStyle Hidden -ArgumentList @(
 ) | Out-Null
 
 Write-Host "DesktopGroups удалён. Каталог $dest будет удалён через пару секунд."
+if ($savedConfig) { Write-Host "Группы сохранены: $savedConfig" }

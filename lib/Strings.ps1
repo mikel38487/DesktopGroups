@@ -73,6 +73,7 @@ $script:StringTable = @{
         'status.gridFallback'    = 'сетка по умолчанию: {0}'
         'status.unresolved'      = 'не найдено на столе: {0}'
         'status.langSet'         = 'Язык интерфейса: русский'
+        'status.bgFailed'        = 'фон не применился: {0}'
 
         'msg.applyTitle'         = 'Применить'
         'msg.replaceTitle'       = 'Предложить группы'
@@ -100,7 +101,7 @@ $script:StringTable = @{
         'dlg.addButton'          = 'Добавить'
         'dlg.cancel'             = 'Отмена'
         'dlg.noFree'             = 'Свободных значков нет — все уже в группах.'
-        'dlg.bgFilter'           = 'Изображения|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.webp|Все файлы|*.*'
+        'dlg.bgFilter'           = 'Изображения|*.png;*.jpg;*.jpeg;*.bmp;*.gif|Все файлы|*.*'
         'dlg.bgTitle'            = 'Фоновый рисунок обоев'
         'dlg.wallTitle'          = 'Куда сохранить обои'
         'dlg.wallFilter'         = 'PNG|*.png'
@@ -112,6 +113,7 @@ $script:StringTable = @{
         'err.read'               = 'ReadProcessMemory не удался'
         'err.imageTooBig'        = 'файл фона слишком большой: {0} МБ'
         'err.imageRead'          = 'не удалось прочитать изображение'
+        'err.imageTooManyPixels' = 'картинка слишком большая по размерам: {0} МП'
         'err.bitness'            = 'DesktopGroups требует 64-битный PowerShell: под 32-битным хостом структура LVITEM не совпадает с explorer.exe'
 
         'group.other'            = 'Прочее'
@@ -187,6 +189,7 @@ How it works
         'status.gridFallback'    = 'default grid: {0}'
         'status.unresolved'      = 'not found on the desktop: {0}'
         'status.langSet'         = 'Interface language: English'
+        'status.bgFailed'        = 'background was not applied: {0}'
 
         'msg.applyTitle'         = 'Apply'
         'msg.replaceTitle'       = 'Suggest groups'
@@ -214,7 +217,7 @@ How it works
         'dlg.addButton'          = 'Add'
         'dlg.cancel'             = 'Cancel'
         'dlg.noFree'             = 'No free icons — everything is already in groups.'
-        'dlg.bgFilter'           = 'Images|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.webp|All files|*.*'
+        'dlg.bgFilter'           = 'Images|*.png;*.jpg;*.jpeg;*.bmp;*.gif|All files|*.*'
         'dlg.bgTitle'            = 'Wallpaper background image'
         'dlg.wallTitle'          = 'Save the wallpaper as'
         'dlg.wallFilter'         = 'PNG|*.png'
@@ -226,6 +229,7 @@ How it works
         'err.read'               = 'ReadProcessMemory failed'
         'err.imageTooBig'        = 'background file is too large: {0} MB'
         'err.imageRead'          = 'could not read the image'
+        'err.imageTooManyPixels' = 'image is too large in pixels: {0} MP'
         'err.bitness'            = 'DesktopGroups requires 64-bit PowerShell: under a 32-bit host the LVITEM structure does not match explorer.exe'
 
         'group.other'            = 'Misc'
